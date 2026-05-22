@@ -16,7 +16,7 @@
 import { assignRolesLlm, type LlmComplete } from './7-role-assignment-llm';
 import type { RoleAssignmentInput, RoleAssignmentResult } from './types';
 
-export const DEFAULT_OPENROUTER_MODEL = 'qwen/qwen3.6-35b-a3b';
+export const DEFAULT_OPENROUTER_MODEL = 'minimax/minimax-m2.7';
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 export interface OpenRouterOptions {

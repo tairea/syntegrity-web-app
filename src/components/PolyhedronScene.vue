@@ -61,7 +61,8 @@ interface LineEntry { line: THREE.Line; strutId: number }
 interface SpriteEntry { sprite: THREE.Sprite; kind: 'vertexLabel' | 'avatar' | 'name'; index: number }
 let lineEntries: LineEntry[] = [];
 let spriteEntries: SpriteEntry[] = [];
-const disposables: { dispose(): void }[] = [];
+const disposables: { dispose(): void }[] = []; // permanent: vertex labels + lines
+let nodeDisposables: { dispose(): void }[] = []; // per-participant avatars + names
 
 // ── canvas-texture helpers ─────────────────────────────────────────────────
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -75,7 +76,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 }
 
 interface LabelOpts { fontSize?: number; color?: string; bg?: string; border?: string }
-function makeLabelSprite(text: string, opts: LabelOpts = {}): { sprite: THREE.Sprite; aspect: number } {
+function makeLabelSprite(text: string, opts: LabelOpts = {}, track: { dispose(): void }[] = disposables): { sprite: THREE.Sprite; aspect: number } {
   const { fontSize = 48, color = '#e6ecff', bg = 'rgba(20,24,38,0.9)', border = '#313a59' } = opts;
   const pad = 18;
   const canvas = document.createElement('canvas');
@@ -103,11 +104,11 @@ function makeLabelSprite(text: string, opts: LabelOpts = {}): { sprite: THREE.Sp
   tex.anisotropy = 4;
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false });
   const sprite = new THREE.Sprite(mat);
-  disposables.push(tex, mat);
+  track.push(tex, mat);
   return { sprite, aspect: w / h };
 }
 
-function makeAvatarSprite(node: SceneNode): THREE.Sprite {
+function makeAvatarSprite(node: SceneNode, track: { dispose(): void }[] = disposables): THREE.Sprite {
   const size = 256;
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
@@ -157,7 +158,7 @@ function makeAvatarSprite(node: SceneNode): THREE.Sprite {
   }
   const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: true, depthWrite: false });
   const sprite = new THREE.Sprite(mat);
-  disposables.push(tex, mat);
+  track.push(tex, mat);
   return sprite;
 }
 
@@ -169,20 +170,62 @@ function clearGroup() {
     if (mesh.geometry) mesh.geometry.dispose();
   });
   for (const d of disposables) d.dispose();
+  for (const d of nodeDisposables) d.dispose();
   disposables.length = 0;
+  nodeDisposables = [];
   lineEntries = [];
   spriteEntries = [];
   group = null;
 }
 
+/** Remove just the participant avatars/names (keep vertices + lines). */
+function clearNodes() {
+  for (const e of spriteEntries) {
+    if (e.kind === 'vertexLabel') continue;
+    group?.remove(e.sprite);
+  }
+  spriteEntries = spriteEntries.filter((e) => e.kind === 'vertexLabel');
+  for (const d of nodeDisposables) d.dispose();
+  nodeDisposables = [];
+}
+
+/** (Re)build participant avatars + name labels at strut midpoints. */
+function buildNodes() {
+  if (!group || !props.shapeName) return;
+  const shape = getShape(props.shapeName);
+  const verts = vertexPositions(props.shapeName) as [number, number, number][];
+  shape.struts.forEach((strut, sid) => {
+    const node = props.edgeNodes[sid] ?? null;
+    const [mx, my, mz] = edgeMidpoint(verts, strut.memberOf[0], strut.memberOf[1]);
+    // Filled struts show the participant; empty struts show a "?" placeholder.
+    const avatar = makeAvatarSprite(node ?? { id: `vacant-${sid}`, name: '?', color: '#39414f' }, nodeDisposables);
+    avatar.scale.set(0.1, 0.1, 1);
+    avatar.position.set(mx, my, mz);
+    if (node) avatar.userData = { clickable: true, type: 'person', id: node.id };
+    spriteEntries.push({ sprite: avatar, kind: 'avatar', index: sid });
+    group!.add(avatar);
+    if (node) {
+      const { sprite: nameSprite, aspect } = makeLabelSprite(node.name, { fontSize: 40, bg: 'rgba(12,15,24,0.0)', border: 'rgba(0,0,0,0)' }, nodeDisposables);
+      const nh = 0.07;
+      nameSprite.scale.set(nh * aspect, nh, 1);
+      nameSprite.position.set(mx, my - 0.09, mz);
+      spriteEntries.push({ sprite: nameSprite, kind: 'name', index: sid });
+      group!.add(nameSprite);
+    }
+  });
+}
+
+/** Full build (geometry + nodes). Preserves rotation so even a shape roll-up
+ *  (6→12→30) keeps spinning rather than snapping back to zero. */
 function build() {
   if (!scene) return;
+  const prevRot = group ? { x: group.rotation.x, y: group.rotation.y } : null;
   clearGroup();
   group = new THREE.Group();
+  if (prevRot) { group.rotation.x = prevRot.x; group.rotation.y = prevRot.y; }
   scene.add(group);
   if (!props.shapeName) return;
 
-  const shape = getShape(props.shapeName);
   const pos = vertexPositions(props.shapeName).map(([x, y, z]) => new THREE.Vector3(x, y, z));
 
   // Vertices: the topic box IS the node — placed directly at the vertex.
@@ -197,38 +240,26 @@ function build() {
     group!.add(sprite);
   });
 
-  // Struts: line + (optional) avatar + name at midpoint.
-  shape.struts.forEach((strut, sid) => {
-    const a = pos[strut.memberOf[0]];
-    const b = pos[strut.memberOf[1]];
-    const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
+  // Struts: static lines.
+  getShape(props.shapeName).struts.forEach((strut, sid) => {
+    const geo = new THREE.BufferGeometry().setFromPoints([pos[strut.memberOf[0]], pos[strut.memberOf[1]]]);
     const mat = new THREE.LineBasicMaterial({ color: NORMAL.clone(), transparent: true });
     const line = new THREE.Line(geo, mat);
     disposables.push(geo, mat);
     group!.add(line);
     lineEntries.push({ line, strutId: sid });
-
-    const node = props.edgeNodes[sid] ?? null;
-    const [mx, my, mz] = edgeMidpoint(pos.map((p) => [p.x, p.y, p.z]) as [number, number, number][], strut.memberOf[0], strut.memberOf[1]);
-
-    // Filled struts show the participant; empty struts show a "?" placeholder.
-    const avatar = makeAvatarSprite(node ?? { id: `vacant-${sid}`, name: '?', color: '#39414f' });
-    avatar.scale.set(0.1, 0.1, 1); // person circles ~half their old size
-    avatar.position.set(mx, my, mz);
-    if (node) avatar.userData = { clickable: true, type: 'person', id: node.id };
-    spriteEntries.push({ sprite: avatar, kind: 'avatar', index: sid });
-    group!.add(avatar);
-
-    if (node) {
-      const { sprite: nameSprite, aspect } = makeLabelSprite(node.name, { fontSize: 40, bg: 'rgba(12,15,24,0.0)', border: 'rgba(0,0,0,0)' });
-      const nh = 0.07;
-      nameSprite.scale.set(nh * aspect, nh, 1);
-      nameSprite.position.set(mx, my - 0.09, mz);
-      spriteEntries.push({ sprite: nameSprite, kind: 'name', index: sid });
-      group!.add(nameSprite);
-    }
   });
 
+  buildNodes();
+  applyHighlights();
+}
+
+/** Refresh only the participant sprites — keeps geometry, lines and the current
+ *  rotation intact so adding a member doesn't reset the spinning graph. */
+function updateNodes() {
+  if (!group) { build(); return; }
+  clearNodes();
+  buildNodes();
   applyHighlights();
 }
 
@@ -339,7 +370,7 @@ onMounted(() => {
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
 
-  build();
+  syncScene();
   resize();
   ro = new ResizeObserver(resize);
   ro.observe(host.value);
@@ -356,7 +387,15 @@ onBeforeUnmount(() => {
   if (host.value) host.value.innerHTML = '';
 });
 
-watch(() => [props.shapeName, props.edgeNodes, props.vertexLabels], build, { deep: true });
+// Full rebuild only when the geometry (shape) or topic labels change; adding or
+// removing a participant just refreshes the avatars in place — no rotation reset.
+let builtKey = '';
+function syncScene() {
+  const key = (props.shapeName ?? 'none') + '|' + props.vertexLabels.join('');
+  if (key !== builtKey) { build(); builtKey = key; }
+  else updateNodes();
+}
+watch(() => [props.shapeName, props.edgeNodes, props.vertexLabels], syncScene, { deep: true });
 watch(() => [props.focus, props.critique], applyHighlights, { deep: true });
 </script>
 

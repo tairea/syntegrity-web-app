@@ -133,6 +133,13 @@ const PREF_SYSTEM = `You role-play a participant ranking topics by personal pref
 first) in a Team Syntegrity session. Rank ALL provided topic ids. Respond with ONLY JSON:
 {"rankedTopicIds": string[]}.`;
 
+function normalizeRanking(ranked: string[] | undefined, topics: { id: string }[]): string[] {
+  const valid = new Set(topics.map((t) => t.id));
+  const out = (ranked ?? []).filter((id) => valid.has(id));
+  for (const t of topics) if (!out.includes(t.id)) out.push(t.id); // append any omitted
+  return out;
+}
+
 export async function botPreference(opts: {
   drivingQuestion: string;
   topics: { id: string; title: string }[];
@@ -141,9 +148,28 @@ export async function botPreference(opts: {
   const prompt = JSON.stringify({ drivingQuestion: opts.drivingQuestion, topics: opts.topics }, null, 2);
   const text = await opts.complete(prompt, grounded(PREF_SYSTEM));
   const { rankedTopicIds } = parseJsonObject<{ rankedTopicIds: string[] }>(text);
-  const valid = new Set(opts.topics.map((t) => t.id));
-  const ranked = (rankedTopicIds ?? []).filter((id) => valid.has(id));
-  // Ensure completeness: append any topics the model omitted.
-  for (const t of opts.topics) if (!ranked.includes(t.id)) ranked.push(t.id);
-  return ranked;
+  return normalizeRanking(rankedTopicIds, opts.topics);
+}
+
+const PREF_BATCH_SYSTEM = `You role-play SEVERAL different participants ranking topics by personal
+preference (most preferred first) in a Team Syntegrity session. You are given the voters and the
+candidate topics. For EACH voter, rank ALL provided topic ids, varying the rankings by voter so they
+reflect distinct viewpoints. Respond with ONLY JSON:
+{"rankings":[{"participantId":string,"rankedTopicIds":string[]}]} with one entry per voter.`;
+
+/** One call → a full topic ranking for every voter. Returns participantId → rankedTopicIds. */
+export async function botPreferenceBatch(opts: {
+  drivingQuestion: string;
+  topics: { id: string; title: string }[];
+  voters: { id: string; name: string }[];
+  complete: LlmComplete;
+}): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>();
+  if (!opts.voters.length || !opts.topics.length) return out;
+  const prompt = JSON.stringify({ drivingQuestion: opts.drivingQuestion, topics: opts.topics, voters: opts.voters }, null, 2);
+  const text = await opts.complete(prompt, grounded(PREF_BATCH_SYSTEM));
+  const { rankings } = parseJsonObject<{ rankings: { participantId: string; rankedTopicIds: string[] }[] }>(text);
+  const byId = new Map((rankings ?? []).map((r) => [r.participantId, r.rankedTopicIds]));
+  for (const v of opts.voters) out.set(v.id, normalizeRanking(byId.get(v.id), opts.topics));
+  return out;
 }

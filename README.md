@@ -28,16 +28,16 @@ You start a session around one **driving question**, invite people with a link, 
 group works through these steps. Steps 1 to 7 are built and being tested; the discussion
 steps after that are pending.
 
-1. **Initiate** - set the driving question, get an invite link. ✅
-2. **Profile** - add your name and a photo. ✅
-3. **Lobby** - a rotating 3D shape that grows as people join. ✅
-4. **Problem Jostle** - everyone posts statements; the app clusters them into themes live. ✅
-5. **Voting** - each person spends 5 votes to pick the topics that matter most. ✅
-6. **Topic Preference** - rank the winning topics in the order you'd like to work on them. ✅
-7. **Syntegrity Graph** - everyone is matched to topics (as a contributor and as a critic)
-   and shown their meeting schedule. ✅
+1. **Initiate** - set the driving question, get an invite link. ✅ *claude built, human refined*
+2. **Profile** - add your name and a photo. ✅ *claude built, human refined*
+3. **Lobby** - a rotating 3D shape that grows as people join. ✅ *claude built, human refined*
+4. **Problem Jostle** - everyone posts statements; the app clusters them into themes live. ✅ *claude built, human working on now*
+5. **Voting** - each person spends 5 votes to pick the topics that matter most. ⏳ *claude built, waiting for human to test and improve*
+6. **Topic Preference** - rank the winning topics in the order you'd like to work on them. ⏳ *claude built, waiting for human to test and improve*
+7. **Syntegrity Graph** - everyone is matched to topics (as a contributor and as a critic) ⏳ *claude built, waiting for human to test and improve*
+   and shown their meeting schedule. ⏳ *claude built, waiting for human to test and improve*
 8. **Discussion rounds** - the actual team conversations (three rounds), shared statements,
-   and final outcomes. ⏳ *Pending.*
+   and final outcomes. 🚧 *Not yet built, or defined*
 
 ## Testing it solo
 

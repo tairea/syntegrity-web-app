@@ -28,7 +28,7 @@ const initial = computed(() => (props.name?.trim()?.[0] ?? '?').toUpperCase());
 .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .initial {
   width: 100%; height: 100%; display: grid; place-items: center; box-sizing: border-box;
-  background: transparent; border: 2px solid #8a94b0; border-radius: 50%;
+  background: transparent; border: 1px solid rgba(138, 148, 176, 0.5); border-radius: 50%;
   color: #e6ecff; font-weight: 600;
 }
 </style>

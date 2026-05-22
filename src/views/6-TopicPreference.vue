@@ -6,6 +6,7 @@ import { useParticipantsStore } from '@/stores/participants';
 import { useVotingStore } from '@/stores/voting';
 import { usePreferenceStore } from '@/stores/preference';
 import { encodedShapeForHeadcount, getShape, type ShapeName } from '@/util';
+import draggable from 'vuedraggable';
 import ParticipantSidePanel from '@/components/ParticipantSidePanel.vue';
 
 const session = useSessionStore();
@@ -38,17 +39,7 @@ watch(
 const savedForMe = computed(() => (myParticipantId.value ? preference.isSaved(myParticipantId.value) : false));
 const doneIds = computed(() => participants.active.filter((p) => preference.isSaved(p.id)).map((p) => p.id));
 
-// drag reorder
-const dragIdx = ref<number | null>(null);
-function onDrop(i: number) {
-  if (dragIdx.value === null || dragIdx.value === i) return;
-  const arr = [...order.value];
-  const [moved] = arr.splice(dragIdx.value, 1);
-  arr.splice(i, 0, moved);
-  order.value = arr;
-  dragIdx.value = null;
-  autosave();
-}
+const dragging = ref(false);
 function autosave() {
   // keep an unsaved working copy synced so reloads/late reads see progress
   if (myParticipantId.value) preference.setRanking(sessionId.value, myParticipantId.value, order.value, savedForMe.value);
@@ -76,23 +67,30 @@ function undo() { if (myParticipantId.value) preference.undoSave(sessionId.value
         <h2>Rank the {{ N }} topics by your preference</h2>
         <p>Drag to reorder — top is most preferred, bottom least. Save when you're happy.</p>
       </header>
-      <ol class="list">
-        <li
-          v-for="(id, i) in order"
-          :key="id"
-          draggable="true"
-          @dragstart="dragIdx = i"
-          @dragover.prevent
-          @drop="onDrop(i)"
-        >
-          <span class="rank">{{ i + 1 }}</span>
-          <div class="body">
-            <h4>{{ cardById.get(id)?.title }}</h4>
-            <p>{{ cardById.get(id)?.rationale }}</p>
-          </div>
-          <span class="grip">⠿</span>
-        </li>
-      </ol>
+      <draggable
+        v-model="order"
+        tag="ol"
+        class="list"
+        :class="{ 'is-dragging': dragging }"
+        :item-key="(el: string) => el"
+        :animation="180"
+        ghost-class="ghost"
+        chosen-class="chosen"
+        drag-class="drag"
+        @start="dragging = true"
+        @end="dragging = false; autosave()"
+      >
+        <template #item="{ element: id, index: i }">
+          <li class="row">
+            <span class="rank">{{ i + 1 }}</span>
+            <div class="body">
+              <h4>{{ cardById.get(id)?.title }}</h4>
+              <p>{{ cardById.get(id)?.rationale }}</p>
+            </div>
+            <span class="grip">⠿</span>
+          </li>
+        </template>
+      </draggable>
     </main>
   </div>
 </template>
@@ -102,12 +100,22 @@ function undo() { if (myParticipantId.value) preference.undoSave(sessionId.value
 .main { overflow-y: auto; padding: 1.5rem; }
 header h2 { margin: 0; }
 header p { opacity: 0.65; margin: 0.3rem 0 1.2rem; }
-.list { list-style: none; padding: 0; margin: 0 auto; max-width: 640px; display: grid; gap: 0.5rem; }
-.list li { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.75rem; background: #11141f; border: 1px solid #232b44; border-radius: 12px; padding: 0.7rem 0.9rem; cursor: grab; }
+.list { list-style: none; padding: 0; margin: 0 auto; max-width: 640px; display: flex; flex-direction: column; gap: 0.5rem; }
+.row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.75rem; background: #11141f; border: 1px solid #232b44; border-radius: 12px; padding: 0.7rem 0.9rem; cursor: grab; transition: box-shadow 0.15s, border-color 0.15s; }
+.row:hover { border-color: #2f3a5e; }
 .rank { font-size: 1.1rem; font-weight: 700; opacity: 0.5; width: 1.5rem; text-align: center; }
 .body h4 { margin: 0; }
 .body p { margin: 0.2rem 0 0; font-size: 0.82rem; opacity: 0.7; }
-.grip { opacity: 0.4; }
+.grip { opacity: 0.4; cursor: grab; }
+
+/* The gap left where the held card will drop. */
+.ghost { opacity: 0.35; border: 1px dashed #4f7cff; background: #161c2e; }
+.ghost * { visibility: hidden; }
+/* The card the pointer picked up. */
+.chosen { border-color: #4f7cff; }
+/* The floating card following the cursor. */
+.drag { cursor: grabbing; box-shadow: 0 12px 30px rgba(0,0,0,0.55); border-color: #4f7cff; transform: scale(1.02); opacity: 0.95; }
+.list.is-dragging .row { cursor: grabbing; }
 .save-btn { background: #4f7cff; border: none; color: #fff; border-radius: 8px; padding: 0.3rem 0.5rem; font-size: 0.72rem; cursor: pointer; }
 .save-btn.ready { background: #2a7a44; }
 .status { opacity: 0.6; }

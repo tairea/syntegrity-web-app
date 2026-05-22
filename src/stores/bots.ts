@@ -8,7 +8,7 @@ import { defineStore } from 'pinia';
 import { supabase } from '@/services/supabase';
 import {
   BOT_NAMES,
-  botPreference,
+  botPreferenceBatch,
   botStatements,
   botStatementsBatch,
   botVotesBatch,
@@ -141,14 +141,18 @@ export const useBotStore = defineStore('bots', () => {
       const pref = usePreferenceStore();
       const topics = graph.finalizedTopics.map((t) => ({ id: t.id, title: t.title }));
       if (!topics.length) return;
+      // One batched call → a ranking for every bot.
+      console.log(`[bots] ranking topics for ${bots.length} bots in one call…`);
+      let rankings = new Map<string, string[]>();
+      try {
+        rankings = await botPreferenceBatch({ drivingQuestion, topics, voters: bots.map((b) => ({ id: b.id, name: b.name })), complete });
+      } catch (e) { console.error('[bots] batch preference call failed', e); return; }
+      console.log(`[bots] → received ${rankings.size} rankings`);
       for (const bot of bots) {
         try {
-          console.log(`[${bot.name}] ranking topics…`);
-          const ranked = await botPreference({ drivingQuestion, topics, complete });
-          console.log(`[${bot.name}] → ranked ${ranked.length} topics`);
-          await pref.savePreferences(sessionId, bot.id, ranked);
+          await pref.savePreferences(sessionId, bot.id, rankings.get(bot.id) ?? topics.map((t) => t.id));
           await markActed(bot, phase);
-        } catch (e) { console.error(`[${bot.name}] preference failed`, e); }
+        } catch (e) { console.error(`[${bot.name}] preference save failed`, e); }
       }
     }
     // graph: bots need no action — they already occupy struts and the schedule.
