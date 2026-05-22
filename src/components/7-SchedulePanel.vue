@@ -51,8 +51,12 @@ const mine = computed(() => props.schedule?.perParticipant.find((p) => p.partici
 </template>
 
 <style scoped>
-.sched { width: 280px; background: #11141f; color: #e6ecff; height: 100%; overflow-y: auto; transition: width 0.2s; border-right: 1px solid #232b44; }
-.sched.collapsed { width: 40px; }
+/* Floats over the graph stage (absolute) so toggling its width animates on top of
+ * the canvas without resizing it — keeps the 3D graph from redrawing per toggle. */
+.sched { position: absolute; left: 0; top: 0; bottom: 0; z-index: 20; width: auto; max-width: 320px; background: #11141f; color: #e6ecff; overflow-y: auto; overflow-x: hidden; transition: max-width 0.2s; border-right: 1px solid #232b44; }
+/* width:auto sizes to content (no inner x-scroll); the collapse animates via
+ * max-width since `auto` itself can't be transitioned. */
+.sched.collapsed { max-width: 40px; }
 .toggle { width: 100%; background: #1b2236; border: none; color: #cdd6f4; padding: 0.6rem; cursor: pointer; text-align: left; }
 .content { padding: 0.75rem; }
 .tabs { display: flex; gap: 0.4rem; margin-bottom: 0.5rem; }

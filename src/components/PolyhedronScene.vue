@@ -56,11 +56,28 @@ const pointer = new THREE.Vector2();
 const NORMAL = new THREE.Color('#6c7a96');
 const RED = new THREE.Color('#e06c75');
 
+// Local (unrotated) vertex positions, kept so highlights can re-cut struts and
+// the focus animation can compute a target orientation.
+let localVerts: THREE.Vector3[] = [];
+// When a focus is active, the group eases toward this orientation so the clicked
+// element sits centred (facing the camera) with its connections horizontal.
+let focusQuat: THREE.Quaternion | null = null;
+// Set when the user drags during a focus — suspends auto-centring so their
+// manual rotation isn't fought by the slerp.
+let userAdjusted = false;
+const Z_AXIS = new THREE.Vector3(0, 0, 1);
+const X_AXIS = new THREE.Vector3(1, 0, 0);
+
 // Per-element handles for highlight updates + disposal.
 interface LineEntry { line: THREE.Line; strutId: number }
 interface SpriteEntry { sprite: THREE.Sprite; kind: 'vertexLabel' | 'avatar' | 'name'; index: number }
 let lineEntries: LineEntry[] = [];
 let spriteEntries: SpriteEntry[] = [];
+// Red lines drawn in critique mode. A critic relationship is NOT a physical edge
+// of the solid (a strut critiques two vertices it doesn't touch), so we draw it
+// as a dedicated line from the focused element to each critique target. Rebuilt
+// on every applyHighlights and torn down when leaving critique/focus.
+let relLines: THREE.Line[] = [];
 const disposables: { dispose(): void }[] = []; // permanent: vertex labels + lines
 let nodeDisposables: { dispose(): void }[] = []; // per-participant avatars + names
 
@@ -163,7 +180,17 @@ function makeAvatarSprite(node: SceneNode, track: { dispose(): void }[] = dispos
 }
 
 // ── build / clear ───────────────────────────────────────────────────────────
+function clearRelLines() {
+  for (const l of relLines) {
+    group?.remove(l);
+    l.geometry.dispose();
+    (l.material as THREE.Material).dispose();
+  }
+  relLines = [];
+}
+
 function clearGroup() {
+  clearRelLines();
   if (group && scene) scene.remove(group);
   group?.traverse((o) => {
     const mesh = o as THREE.Mesh;
@@ -227,6 +254,7 @@ function build() {
   if (!props.shapeName) return;
 
   const pos = vertexPositions(props.shapeName).map(([x, y, z]) => new THREE.Vector3(x, y, z));
+  localVerts = pos;
 
   // Vertices: the topic box IS the node — placed directly at the vertex.
   pos.forEach((v, i) => {
@@ -290,16 +318,96 @@ function applyHighlights() {
     }
   }
 
+  // In critique mode the meaning is carried by the red relationship lines, so the
+  // physical struts fade right back out of the way.
+  const critiqueFocus = !!focus && critique;
+  clearRelLines();
+
   for (const { line, strutId } of lineEntries) {
     const lit = litStruts.has(strutId);
     const mat = line.material as THREE.LineBasicMaterial;
-    mat.color.copy(critique && lit ? RED : NORMAL);
-    mat.opacity = focus ? (lit ? 1 : 0.08) : 0.6;
+    const s = shape.struts[strutId];
+    mat.color.copy(NORMAL);
+    mat.opacity = critiqueFocus ? 0.05 : focus ? (lit ? 1 : 0.08) : 0.6;
+
+    if (localVerts.length) {
+      // Normal (member) topic focus: cut the lit strut at the person (midpoint)
+      // so the line stops at the avatar rather than running on to the dimmed
+      // far topic. Everything else (incl. critique mode) keeps the full edge.
+      if (!critiqueFocus && focus && focus.type === 'topic' && lit) {
+        const v = Number(focus.id);
+        const other = s.memberOf[0] === v ? s.memberOf[1] : s.memberOf[0];
+        const mid = localVerts[v].clone().add(localVerts[other]).multiplyScalar(0.5);
+        line.geometry.setFromPoints([localVerts[v], mid]);
+      } else {
+        line.geometry.setFromPoints([localVerts[s.memberOf[0]], localVerts[s.memberOf[1]]]);
+      }
+    }
   }
+
+  // Critique relationship lines: from the focused topic out to each of its critic
+  // people's avatars, or from a focused person out to each topic they critique.
+  if (critiqueFocus && localVerts.length && group) {
+    const midOf = (sid: number) => {
+      const st = shape.struts[sid];
+      return localVerts[st.memberOf[0]].clone().add(localVerts[st.memberOf[1]]).multiplyScalar(0.5);
+    };
+    const addRel = (a: THREE.Vector3, b: THREE.Vector3) => {
+      const geo = new THREE.BufferGeometry().setFromPoints([a, b]);
+      const m = new THREE.LineBasicMaterial({ color: RED.clone(), transparent: true, opacity: 0.95 });
+      const l = new THREE.Line(geo, m);
+      group!.add(l);
+      relLines.push(l);
+    };
+    if (focus!.type === 'topic') {
+      const v = Number(focus!.id);
+      shape.struts.forEach((st, sid) => {
+        if (st.criticOf.includes(v)) addRel(localVerts[v], midOf(sid));
+      });
+    } else {
+      const sid = shape.struts.findIndex((_, i) => props.edgeNodes[i]?.id === focus!.id);
+      if (sid >= 0) {
+        const personMid = midOf(sid);
+        for (const v of shape.struts[sid].criticOf) addRel(personMid, localVerts[v]);
+      }
+    }
+  }
+
   for (const { sprite, kind, index } of spriteEntries) {
     const lit = kind === 'vertexLabel' ? litVertices.has(index) : litStruts.has(index);
     (sprite.material as THREE.SpriteMaterial).opacity = !focus ? 1 : lit ? 1 : 0.1;
   }
+}
+
+/** Target orientation that brings the focused element to the centre, facing the
+ *  camera (world +Z). For a person, the strut's two topics are also laid out
+ *  horizontally — topic on the left (−X), topic on the right (+X), person between
+ *  them. Returns null when there's no focus or geometry isn't built yet. */
+function computeFocusQuat(): THREE.Quaternion | null {
+  const f = props.focus;
+  if (!f || !props.shapeName || !localVerts.length) return null;
+  const shape = getShape(props.shapeName);
+
+  if (f.type === 'topic') {
+    const v = Number(f.id);
+    if (!localVerts[v]) return null;
+    const dir = localVerts[v].clone().normalize();
+    return new THREE.Quaternion().setFromUnitVectors(dir, Z_AXIS);
+  }
+
+  // person: orient so the strut midpoint faces the camera and the edge is level.
+  const sid = shape.struts.findIndex((_, i) => props.edgeNodes[i]?.id === f.id);
+  if (sid < 0) return null;
+  const s = shape.struts[sid];
+  const v0 = localVerts[s.memberOf[0]];
+  const v1 = localVerts[s.memberOf[1]];
+  const mid = v0.clone().add(v1).multiplyScalar(0.5).normalize();
+  const edge = v1.clone().sub(v0).normalize();
+  // Step 1: midpoint → camera. Step 2: spin about that axis so the edge is horizontal.
+  const q1 = new THREE.Quaternion().setFromUnitVectors(mid, Z_AXIS);
+  const e1 = edge.applyQuaternion(q1).normalize();
+  const q2 = new THREE.Quaternion().setFromUnitVectors(e1, X_AXIS);
+  return q2.multiply(q1);
 }
 
 // ── drag-to-rotate + click (raycast) ─────────────────────────────────────────
@@ -317,7 +425,7 @@ function onPointerMove(e: PointerEvent) {
   if (!dragging || !group) return;
   const dx = e.clientX - lastX;
   const dy = e.clientY - lastY;
-  if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+  if (Math.abs(dx) + Math.abs(dy) > 4) { moved = true; if (props.focus) userAdjusted = true; }
   lastX = e.clientX;
   lastY = e.clientY;
   group.rotation.y += dx * 0.006;
@@ -352,7 +460,14 @@ function resize() {
 
 function animate() {
   raf = requestAnimationFrame(animate);
-  if (group && props.rotate && !props.focus && !dragging) group.rotation.y += 0.003;
+  if (group) {
+    if (focusQuat && !dragging && !userAdjusted) {
+      // Ease toward the centred orientation; near-identical slerp snaps cheaply.
+      group.quaternion.slerp(focusQuat, 0.12);
+    } else if (props.rotate && !props.focus && !dragging) {
+      group.rotation.y += 0.003;
+    }
+  }
   if (renderer && scene && camera) renderer.render(scene, camera);
 }
 
@@ -396,7 +511,15 @@ function syncScene() {
   else updateNodes();
 }
 watch(() => [props.shapeName, props.edgeNodes, props.vertexLabels], syncScene, { deep: true });
-watch(() => [props.focus, props.critique], applyHighlights, { deep: true });
+watch(
+  () => [props.focus, props.critique],
+  () => {
+    focusQuat = computeFocusQuat();
+    userAdjusted = false;
+    applyHighlights();
+  },
+  { deep: true },
+);
 </script>
 
 <template>

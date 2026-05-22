@@ -82,7 +82,10 @@ const focusLabel = computed(() => {
         <h3>{{ focusLabel }}</h3>
         <p class="mode" :class="{ on: critiqueMode }">{{ critiqueMode ? 'Showing critique relationships' : 'Showing participant relationships' }}</p>
         <div class="row">
-          <button @click="graph.toggleCritique()">⟲ {{ critiqueMode ? 'Show normal' : 'Show critique' }}</button>
+          <button @click="graph.toggleCritique()">
+            <img :src="`https://api.iconify.design/mdi/${critiqueMode ? 'account-group-outline' : 'comment-search-outline'}.svg?color=%23ffffff`" width="15" height="15" alt="" />
+            {{ critiqueMode ? 'Show normal' : 'Show critique' }}
+          </button>
           <button class="ghost" @click="graph.setFocus(null)">Clear</button>
         </div>
       </div>
@@ -91,7 +94,10 @@ const focusLabel = computed(() => {
 </template>
 
 <style scoped>
-.graph { display: grid; grid-template-columns: auto 1fr; height: 100vh; background: radial-gradient(circle at 60% 40%, #141a2c, #0b0e16); color: #e6ecff; }
+/* The schedule panel floats over the stage (see SchedulePanel) rather than taking
+ * a grid column, so collapsing/expanding it never resizes the WebGL canvas — the
+ * graph stays put instead of redrawing on every toggle. */
+.graph { position: relative; height: 100vh; overflow: hidden; background: radial-gradient(circle at 60% 40%, #141a2c, #0b0e16); color: #e6ecff; }
 .stage { position: relative; height: 100vh; }
 .topbar { position: absolute; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; align-items: center; gap: 0.75rem; }
 .sat { font-size: 0.78rem; opacity: 0.6; }
@@ -102,6 +108,7 @@ const focusLabel = computed(() => {
 .mode { font-size: 0.78rem; opacity: 0.7; margin: 0 0 0.6rem; }
 .mode.on { color: #e06c75; opacity: 1; }
 .row { display: flex; gap: 0.5rem; justify-content: center; }
-.row button { background: #4f7cff; border: none; color: #fff; border-radius: 8px; padding: 0.4rem 0.8rem; cursor: pointer; font: inherit; }
+.row button { display: inline-flex; align-items: center; gap: 0.35rem; background: #4f7cff; border: none; color: #fff; border-radius: 8px; padding: 0.4rem 0.8rem; cursor: pointer; font: inherit; }
+.row button img { display: block; }
 .row .ghost { background: transparent; border: 1px solid #2a3350; color: #cdd6f4; }
 </style>

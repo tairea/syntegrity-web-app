@@ -79,3 +79,26 @@ process: a leading number (like `4-ProblemJostle.vue` or `4-clustering.ts`) mean
 belongs to step 4, and no number means it's shared across steps. Built with Vue 3,
 Supabase (live multiplayer), and three.js (the 3D shape). The Syntegrity maths
 (geometry, matching, scheduling) lives in `src/util/`.
+
+### Jumping straight to a step (`?phase=`)
+
+Normally the step you see is driven by the session's `phase` in the database. For
+testing you can force a specific step's view with a `?phase=` query param on a session
+URL — it's read-only and does **not** change the real phase in the database:
+
+```
+/s/<sessionId>?phase=graph
+```
+
+| Step | `?phase=` value | View |
+| ---- | --------------- | ---- |
+| 3. Lobby | `lobby` (or `reconciliation`) | `3-Lobby.vue` |
+| 4. Problem Jostle | `jostle` | `4-ProblemJostle.vue` |
+| 5. Voting | `voting` | `5-Voting.vue` |
+| 6. Topic Preference | `preference` | `6-TopicPreference.vue` |
+| 7. Syntegrity Graph | `graph` (or `done`) | `7-SyntegrityGraph.vue` |
+
+Steps 1 (Initiate) and 2 (Profile) are their own routes, not phases, so the override
+doesn't apply to them. A step only renders meaningfully if the session already has the
+data that step needs (e.g. `?phase=graph` needs voting/preference data to compute the
+assignment), so point it at a session that's progressed far enough.

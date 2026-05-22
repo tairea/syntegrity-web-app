@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import { useSessionStore } from '@/stores/session';
 import { useParticipantsStore } from '@/stores/participants';
@@ -17,6 +17,7 @@ import SyntegrityGraph from './7-SyntegrityGraph.vue';
 
 const props = defineProps<{ sessionId: string }>();
 const router = useRouter();
+const route = useRoute();
 const session = useSessionStore();
 const participants = useParticipantsStore();
 const { phase, countdown, myParticipantId } = storeToRefs(session);
@@ -60,13 +61,6 @@ watch(
   },
 );
 
-const displayPhase = computed<SessionPhase>(() => {
-  const p = phase.value;
-  if (p === 'jostle') return enteredJostle.value ? 'jostle' : 'lobby';
-  if (p === 'reconciliation') return 'lobby';
-  return p;
-});
-
 const viewFor: Record<SessionPhase, unknown> = {
   lobby: Lobby,
   reconciliation: Lobby,
@@ -76,6 +70,22 @@ const viewFor: Record<SessionPhase, unknown> = {
   graph: SyntegrityGraph,
   done: SyntegrityGraph,
 };
+
+/** Dev convenience: `/s/<id>?phase=graph` jumps straight to a step's view
+ *  without mutating the session. Read-only — does not advance the real phase. */
+const phaseOverride = computed<SessionPhase | null>(() => {
+  const q = route.query.phase;
+  const val = Array.isArray(q) ? q[0] : q;
+  return val && val in viewFor ? (val as SessionPhase) : null;
+});
+
+const displayPhase = computed<SessionPhase>(() => {
+  if (phaseOverride.value) return phaseOverride.value;
+  const p = phase.value;
+  if (p === 'jostle') return enteredJostle.value ? 'jostle' : 'lobby';
+  if (p === 'reconciliation') return 'lobby';
+  return p;
+});
 const currentView = computed(() => viewFor[displayPhase.value]);
 
 async function onEnterJostle() {
