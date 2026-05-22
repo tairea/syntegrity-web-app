@@ -24,7 +24,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # 24 ships npm 11 (matches the lockfile resolver) and Vercel's 24.x runtime.
+          # Node 22's npm 10 rejects this lockfile's optional wasm-binding deps.
+          node-version: 24
           cache: npm
 
       - run: npm ci
