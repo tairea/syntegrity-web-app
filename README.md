@@ -34,12 +34,10 @@ steps after that are pending.
 2. **Profile** - add your name and a photo. ✅ *claude built, human refined*
 3. **Lobby** - a rotating 3D shape that grows as people join. ✅ *claude built, human refined*
 4. **Problem Jostle** - everyone posts statements; the app clusters them into themes live. ✅ *claude built, human working on now*
-5. **Voting** - each person spends 5 votes to pick the topics that matter most. ⏳ *claude built, waiting for human to test and improve*
-6. **Topic Preference** - rank the winning topics in the order you'd like to work on them. ⏳ *claude built, waiting for human to test and improve*
-7. **Syntegrity Graph** - everyone is matched to topics (as a contributor and as a critic) ⏳ *claude built, waiting for human to test and improve*
-   and shown their meeting schedule. ⏳ *claude built, waiting for human to test and improve*
-8. **Discussion rounds** - the actual team conversations (three rounds), shared statements,
-   and final outcomes. 🚧 *Not yet built, or defined*
+5. **Voting** - each person spends 5 votes to pick the topics that matter most. ⏳ *claude built, waiting for human to refine ui*
+6. **Topic Preference** - rank the winning topics in the order you'd like to work on them. ✅ *claude built, human refined*
+7. **Syntegrity Graph** - everyone is matched to topics (as a contributor and as a critic) and shown their meeting schedule. ✅ *claude built, human refined*
+8. **Discussion rounds** - the actual team conversations (three rounds), shared statements, and final outcomes. 🚧 *Not yet built, or defined*
 
 ## Testing it solo
 
@@ -90,6 +88,10 @@ URL — it's read-only and does **not** change the real phase in the database:
 
 ```
 /s/<sessionId>?phase=graph
+```
+For example:
+```
+http://localhost:5173/s/0913bbaf-29f8-4228-8926-24b29eedd9db?phase=graph
 ```
 
 | Step | `?phase=` value | View |
