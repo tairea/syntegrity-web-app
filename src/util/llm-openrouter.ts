@@ -2,109 +2,79 @@
  * OpenRouter transport for the LLM role-assignment method.
  *
  * Produces an `LlmComplete` (the function `assignRolesLlm` depends on), keeping
- * that script transport-agnostic. The model defaults to Qwen3.6-35B-A3B (cheap
- * MoE: ~$0.15/M in, $1.00/M out). All bot/clustering/merge/assignment calls
- * inherit it.
+ * that script transport-agnostic. The model defaults to MiniMax M2.7. All
+ * bot/clustering/merge/assignment calls inherit it.
  *
- * SECURITY: this calls OpenRouter directly with `VITE_OPENROUTER_API_KEY`, which
- * Vite bundles into client code => the key is PUBLIC in the browser. Acceptable
- * for local prototyping only. Before deploying, move this call behind a Supabase
- * edge function and have the browser call that instead; the `LlmComplete` seam
- * means only this file changes.
+ * SECURITY: this no longer talks to OpenRouter directly. It calls the Supabase
+ * Edge Function `openrouter` (see supabase/functions/openrouter/index.ts), which
+ * holds OPENROUTER_API_KEY server-side — the key never reaches the browser. The
+ * `LlmComplete` seam means the rest of the app is unaffected.
  */
 
 import { assignRolesLlm, type LlmComplete } from './7-role-assignment-llm';
 import type { RoleAssignmentInput, RoleAssignmentResult } from './types';
+import { supabase } from '@/services/supabase';
 
 export const DEFAULT_OPENROUTER_MODEL = 'minimax/minimax-m2.7';
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+
+/** Name of the Supabase Edge Function that proxies OpenRouter (holds the key). */
+const PROXY_FUNCTION = 'openrouter';
 
 export interface OpenRouterOptions {
-  /** OpenRouter API key. Falls back to env (VITE_OPENROUTER_API_KEY) if omitted. */
-  apiKey?: string;
-  /** Model slug. Defaults to Claude Sonnet 4.6. */
+  /** Model slug. Defaults to {@link DEFAULT_OPENROUTER_MODEL}. */
   model?: string;
   /** 0..1; assignment wants determinism, so default low. */
   temperature?: number;
   /** Ask OpenRouter to enforce a JSON object response. Default true. */
   jsonMode?: boolean;
-  /** Optional app attribution for OpenRouter rankings. */
-  referer?: string;
-  title?: string;
-  /** Override endpoint (tests/proxies). */
-  baseUrl?: string;
-  /** Abort/timeout support. */
-  signal?: AbortSignal;
 }
 
-/** Read the key from Vite env (browser/build) or process.env (node/tests). */
-export function resolveApiKey(explicit?: string): string {
-  if (explicit) return explicit;
-  // import.meta.env exists under Vite; process.env under node/tests. Access both
-  // defensively via globalThis so this file typechecks without node globals and
-  // runs in either environment.
-  const viteEnv = (import.meta as unknown as { env?: Record<string, string> }).env;
-  const nodeEnv = (globalThis as { process?: { env?: Record<string, string> } }).process?.env;
-  const key = viteEnv?.VITE_OPENROUTER_API_KEY ?? nodeEnv?.VITE_OPENROUTER_API_KEY;
-  if (!key) {
-    throw new Error('OpenRouter API key not found. Set VITE_OPENROUTER_API_KEY in .env or pass apiKey.');
+interface ProxyResponse {
+  content?: string;
+  error?: string;
+}
+
+/** Pull the best error detail out of a supabase-js FunctionsError (it carries the Response). */
+async function describeFunctionError(error: unknown): Promise<string> {
+  const ctx = (error as { context?: Response }).context;
+  if (ctx && typeof ctx.json === 'function') {
+    try {
+      const body = (await ctx.json()) as ProxyResponse;
+      if (body?.error) return body.error;
+    } catch {
+      /* fall through to the generic message */
+    }
   }
-  return key;
-}
-
-interface OpenRouterResponse {
-  choices?: { message?: { content?: string } }[];
-  error?: { message?: string };
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
- * Build an `LlmComplete` bound to OpenRouter. The returned function takes the
- * (prompt, system) pair that `assignRolesLlm` produces and returns the model's
- * raw text content for downstream JSON parsing.
+ * Build an `LlmComplete` bound to the OpenRouter proxy. The returned function
+ * takes the (prompt, system) pair that `assignRolesLlm` produces and returns the
+ * model's raw text content for downstream JSON parsing.
  */
 export function createOpenRouterComplete(options: OpenRouterOptions = {}): LlmComplete {
-  const apiKey = resolveApiKey(options.apiKey);
   const model = options.model ?? DEFAULT_OPENROUTER_MODEL;
   const temperature = options.temperature ?? 0.2;
   const jsonMode = options.jsonMode ?? true;
-  const url = options.baseUrl ?? OPENROUTER_URL;
 
   return async (prompt: string, system: string): Promise<string> => {
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    };
-    if (options.referer) headers['HTTP-Referer'] = options.referer;
-    if (options.title) headers['X-OpenRouter-Title'] = options.title;
-
-    const body: Record<string, unknown> = {
-      model,
-      temperature,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: prompt },
-      ],
-    };
-    if (jsonMode) body.response_format = { type: 'json_object' };
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: options.signal,
+    const { data, error } = await supabase.functions.invoke<ProxyResponse>(PROXY_FUNCTION, {
+      body: {
+        model,
+        temperature,
+        jsonMode,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: prompt },
+        ],
+      },
     });
 
-    if (!res.ok) {
-      const detail = await res.text().catch(() => '');
-      throw new Error(`OpenRouter request failed (${res.status} ${res.statusText}): ${detail.slice(0, 500)}`);
-    }
-
-    const data = (await res.json()) as OpenRouterResponse;
-    if (data.error) throw new Error(`OpenRouter error: ${data.error.message ?? 'unknown'}`);
-
-    const content = data.choices?.[0]?.message?.content;
-    if (!content) throw new Error('OpenRouter returned no message content.');
-    return content;
+    if (error) throw new Error(`OpenRouter proxy request failed: ${await describeFunctionError(error)}`);
+    if (data?.error) throw new Error(`OpenRouter proxy error: ${data.error}`);
+    if (!data?.content) throw new Error('OpenRouter proxy returned no message content.');
+    return data.content;
   };
 }
 
