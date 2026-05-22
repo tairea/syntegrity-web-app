@@ -1,0 +1,44 @@
+name: Vercel Deploy
+
+# Push to main → Production deploy. Pull requests → Preview deploy (commented on the PR).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# One deploy per ref at a time; newer pushes cancel in-flight runs.
+concurrency:
+  group: vercel-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      # Production on main, Preview everywhere else (PRs).
+      TARGET: ${{ github.ref == 'refs/heads/main' && 'production' || 'preview' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install Vercel CLI
+        run: npm install -g vercel@latest
+
+      # Pulls project settings + the VITE_* environment variables you configured
+      # in the Vercel project, so `vercel build` bakes them into the client bundle.
+      - name: Pull Vercel environment
+        run: vercel pull --yes --environment="$TARGET" --token="${{ secrets.VERCEL_TOKEN }}"
+
+      - name: Build (runs `vue-tsc -b && vite build`)
+        run: vercel build ${{ env.TARGET == 'production' && '--prod' || '' }} --token="${{ secrets.VERCEL_TOKEN }}"
+
+      - name: Deploy prebuilt output
+        run: vercel deploy --prebuilt ${{ env.TARGET == 'production' && '--prod' || '' }} --token="${{ secrets.VERCEL_TOKEN }}"
