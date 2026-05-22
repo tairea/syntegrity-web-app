@@ -147,12 +147,12 @@ function removeBot(id: string) {
 .dq { position: absolute; top: 1.2rem; left: 0; right: 0; text-align: center; z-index: 5; pointer-events: none; }
 .dq-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: #7aa2ff; margin: 0 0 0.35rem; }
 .dq-text { display: inline-block; background: rgba(17,20,31,0.82); padding: 0.7rem 1.4rem; border-radius: 14px; max-width: 80vw; margin: 0; font-size: 1.5rem; font-weight: 600; line-height: 1.25; }
-.cards { position: absolute; top: 0; bottom: 0; width: 190px; padding: 4rem 0.5rem 6rem; display: flex; flex-direction: column; gap: 0.4rem; overflow-y: auto; z-index: 5; background: transparent; pointer-events: none; }
+.cards { position: absolute; top: 0; bottom: 0; width: 190px; padding: 3.25rem 0.5rem 4.5rem; display: flex; flex-direction: column; gap: 0.3rem; overflow-y: auto; z-index: 5; background: transparent; pointer-events: none; }
 .cards.left { left: 0; }
 .cards.right { right: 0; }
 /* container ignores pointers (so dragging the shape works through the gaps);
    the cards themselves stay interactive. */
-.card { position: relative; display: flex; align-items: center; gap: 0.5rem; background: rgba(17,20,31,0.55); backdrop-filter: blur(6px); border: 1px solid rgba(35,43,68,0.7); color: #e6ecff; border-radius: 10px; padding: 0.35rem 0.5rem; font: inherit; text-align: left; pointer-events: auto; }
+.card { position: relative; flex: none; display: flex; align-items: center; gap: 0.5rem; background: rgba(17,20,31,0.55); backdrop-filter: blur(6px); border: 1px solid rgba(35,43,68,0.7); color: #e6ecff; border-radius: 10px; padding: 0.28rem 0.5rem; font: inherit; text-align: left; pointer-events: auto; }
 .card.me { border-color: #4f7cff; cursor: pointer; }
 .card .cn { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-x { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; border: none; background: #e06c75; color: #fff; font-size: 0.6rem; line-height: 1; cursor: pointer; opacity: 0; transition: opacity 0.12s; }
@@ -181,7 +181,7 @@ function removeBot(id: string) {
 .bot-add:hover { opacity: 1; }
 .bot-add:active { transform: scale(0.94); }
 .bot-add:disabled { opacity: 0.35; cursor: default; }
-.bot-count { position: absolute; top: -5px; right: -5px; background: #2a7a44; color: #fff; font-size: 0.6rem; min-width: 15px; height: 15px; border-radius: 999px; display: grid; place-items: center; padding: 0 3px; }
+.bot-count { position: absolute; top: -5px; right: -5px; background: #8a94b0; color: #fff; font-size: 0.6rem; min-width: 15px; height: 15px; border-radius: 999px; display: grid; place-items: center; padding: 0 3px; }
 @media (max-width: 800px) {
   .lobby { grid-template-columns: 1fr; }
   .cards { display: none; }

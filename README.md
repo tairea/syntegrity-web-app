@@ -11,6 +11,8 @@ communities can make decisions as a group.
 > they work with). The actual **group discussion rounds come next** and are not built
 > yet. Things will change.
 
+![The lobby view: an icosahedron of 30 participants mapped onto its struts, with topics on the vertices.](./screenshot-01.png)
+
 ## What is Team Syntegrity?
 
 Instead of one person setting the agenda, the group surfaces its own. Everyone is given
