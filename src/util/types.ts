@@ -230,6 +230,30 @@ export interface PersonalSchedule {
   offSlots: number[];
 }
 
+/**
+ * How critics participate in team meetings. Affects scheduling and per-meeting
+ * attendee lists. Mirrors the field on `OutcomeResolveStage` in session-formats.ts.
+ *
+ *  - all-critics-in-room   Beer canon: every critic of T attends T's meeting.
+ *                          Critics count as attendees for slot-packing, so
+ *                          shapes whose opposite-topic critic sets overlap
+ *                          (e.g. octahedron) are forced sequential.
+ *  - split-critics-in-room Only members are blocking attendees. After teams
+ *                          are packed into a slot, eligible critics are
+ *                          distributed across the slot's meetings (each critic
+ *                          at most one meeting per slot, balanced across the
+ *                          meetings they qualify for).
+ *  - async-notes-only      Critics never enter the room. Members only count
+ *                          for packing; meeting `attendeeCriticIds` is empty.
+ *  - no-critics            Contributors-only meetings (off-protocol). Same
+ *                          scheduling effect as async-notes-only.
+ */
+export type CriticPolicy =
+  | 'all-critics-in-room'
+  | 'split-critics-in-room'
+  | 'async-notes-only'
+  | 'no-critics';
+
 export interface SchedulerInput {
   shape: SyntegrityShape;
   assignment: RoleAssignmentResult;
@@ -242,6 +266,14 @@ export interface SchedulerInput {
    * feasible value for the shape. If provided and infeasible, it is clamped.
    */
   concurrency?: number;
+  /** Defaults to 'all-critics-in-room' (Beer canon). */
+  criticPolicy?: CriticPolicy;
+  /**
+   * Topic ids to actually schedule. Defaults to every topic in `topics`. Use
+   * this to drop the lowest-voted topics (e.g. "run 4 of 6 topics") — the
+   * caller chooses which to drop; the scheduler just honors the subset.
+   */
+  activeTopicIds?: TopicId[];
 }
 
 export interface SessionSchedule {
