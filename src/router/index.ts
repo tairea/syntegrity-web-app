@@ -10,6 +10,8 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
  */
 const routes: RouteRecordRaw[] = [
   { path: '/', name: 'initiate', component: () => import('@/views/1-Initiate.vue') },
+  { path: '/schedule', name: 'schedule', component: () => import('@/views/ScheduleCreate.vue') },
+  { path: '/scheduled/:code', name: 'scheduled', component: () => import('@/views/ScheduledSession.vue'), props: true },
   { path: '/join/:code', name: 'join', component: () => import('@/views/JoinResolver.vue'), props: true },
   { path: '/profile/:sessionId', name: 'profile', component: () => import('@/views/2-UserProfile.vue'), props: true },
   { path: '/s/:sessionId', name: 'session', component: () => import('@/views/SessionShell.vue'), props: true },

@@ -85,6 +85,7 @@ function copyLink() {
 
       <div v-if="mode === 'home'" class="home">
         <button class="primary" @click="mode = 'start'">Start a session</button>
+        <button class="ghost wide" @click="router.push({ name: 'schedule' })">Schedule a session</button>
         <p class="join-note">Joining? Open the invite link your host shared with you.</p>
       </div>
 
@@ -134,6 +135,7 @@ h1 { font-size: 2.4rem; font-weight: 600; margin: 0 0 0.5rem; line-height: 1.1; 
 
 .home { display: grid; gap: 1rem; justify-items: center; }
 .home .primary { min-width: 220px; }
+.home .ghost.wide { min-width: 220px; }
 .join-note { color: #6b7694; font-size: 0.8rem; margin: 0.5rem 0 0; }
 .copy-wrap { position: relative; display: flex; }
 .copied { position: absolute; bottom: calc(100% + 6px); right: 0; background: #2a7a44; color: #fff; font-size: 0.72rem; padding: 0.2rem 0.5rem; border-radius: 6px; white-space: nowrap; pointer-events: none; }

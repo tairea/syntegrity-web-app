@@ -22,6 +22,8 @@ export type SessionPhase =
   | 'graph'
   | 'done';
 
+export type SessionStatus = 'live' | 'scheduled' | 'done';
+
 /** ready_flags JSONB shape on participants. */
 export interface ReadyFlags {
   jostle?: boolean;
@@ -41,8 +43,26 @@ export interface SessionRow {
   locked_shape: ShapeName | null;
   roster_locked: boolean;
   headcount_target: number | null;
+  status: SessionStatus;
+  scheduled_start_at: string | null;
+  scheduled_timezone: string | null;
+  session_format_id: string | null;
+  scheduled_duration_minutes: number | null;
+  creator_token: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ScheduledCommitmentRow {
+  id: string;
+  session_id: string;
+  email: string;
+  name: string;
+  avatar_url: string | null;
+  discord_handle: string | null;
+  commit_token: string;
+  participant_id: string | null;
+  created_at: string;
 }
 
 export interface ParticipantRow {

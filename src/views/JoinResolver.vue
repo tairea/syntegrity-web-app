@@ -13,6 +13,11 @@ const state = ref<'resolving' | 'locked' | 'full' | 'notfound'>('resolving');
 onMounted(async () => {
   try {
     const row = await session.resolveCode(props.code);
+    // Scheduled sessions live on a separate invite page until promotion.
+    if (row.status === 'scheduled') {
+      router.replace({ name: 'scheduled', params: { code: row.code } });
+      return;
+    }
     if (row.roster_locked) { state.value = 'locked'; return; }
 
     // Returning participants are always let back in; new joiners are blocked

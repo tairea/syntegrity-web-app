@@ -134,6 +134,21 @@ export interface BetweenIterationStage extends StageBase {
   kind: 'between-iteration';
   /** Whether participants can post lightweight reactions on the public wall. */
   graffitiEnabled: boolean;
+  /**
+   * Optional: structured critique meetings during the break. The 4 critics for
+   * each active topic gather (often in parallel) to produce critique notes that
+   * iter-2 contributors will read.
+   *
+   * For the octahedron, parallelism is constrained by critic-set overlap:
+   * critics of opposite topics are the same 4 people, so opposite topics'
+   * critique meetings cannot run in the same slot. All 6 topics fit in
+   * 2 slots × 3 parallel; 4 topics (one opposite pair dropped) fit in
+   * 2 slots × 2 parallel.
+   */
+  criticMeetings?: {
+    slots: number;
+    slotMinutes: number;
+  };
 }
 
 export interface BreakStage extends StageBase {
@@ -190,7 +205,12 @@ export function sumStageMinutes(format: SessionFormat): number {
 }
 
 export interface FormatValidationIssue {
-  kind: 'minute-mismatch' | 'outcome-resolve-budget' | 'reverberation-budget' | 'iteration-count';
+  kind:
+    | 'minute-mismatch'
+    | 'outcome-resolve-budget'
+    | 'reverberation-budget'
+    | 'critic-meeting-budget'
+    | 'iteration-count';
   detail: string;
 }
 
@@ -236,6 +256,15 @@ export function validateFormat(format: SessionFormat): FormatValidationIssue[] {
         issues.push({
           kind: 'reverberation-budget',
           detail: `reverberation stage "${stage.id}" minutes=${stage.minutes} but parts sum to ${partsSum}`,
+        });
+      }
+    }
+    if (stage.kind === 'between-iteration' && stage.criticMeetings) {
+      const required = stage.criticMeetings.slots * stage.criticMeetings.slotMinutes;
+      if (stage.minutes < required) {
+        issues.push({
+          kind: 'critic-meeting-budget',
+          detail: `between-iteration stage "${stage.id}" allocates ${stage.minutes} min but critique meetings need ${required} (= ${stage.criticMeetings.slots}×${stage.criticMeetings.slotMinutes})`,
         });
       }
     }
@@ -400,73 +429,9 @@ export const COMPACT_60_OCTAHEDRON: SessionFormat = {
   ],
 };
 
-export const PATH_A_90_OCTAHEDRON: SessionFormat = {
-  id: 'path-a-90-octa',
-  name: 'Path A — 90 Sequential (Octahedron)',
-  description:
-    '90-minute Syntegrity, Beer-faithful critic dynamic. Sequential meetings, critics in-room throughout. Single iteration over all 6 topics.',
-  provenance: 'experimental',
-  shape: 'octahedron',
-  totalMinutes: 90,
-  stages: [
-    { id: 'opening', kind: 'opening', label: 'Opening + lobby', minutes: 5 },
-    { id: 'jostle', kind: 'problem-jostle', label: 'Problem Jostle', minutes: 12 },
-    { id: 'vote', kind: 'voting', label: 'Voting', minutes: 4 },
-    { id: 'rank', kind: 'topic-preference', label: 'Topic Preference', minutes: 4 },
-    { id: 'graph', kind: 'graph-reveal', label: 'Graph reveal', minutes: 5 },
-    {
-      id: 'resolve',
-      kind: 'outcome-resolve',
-      label: 'Outcome Resolve — 1 iteration × 6 sequential slots × 10 min',
-      minutes: 60,
-      iterations: 1,
-      slotsPerIteration: 6,
-      slotMinutes: 10,
-      criticPolicy: 'all-critics-in-room',
-    },
-  ],
-  caveats: [
-    'Single iteration — no Beer "three-iteration rhythm".',
-    'Everyone observes every meeting (one Zoom room, no breakouts).',
-  ],
-};
-
-export const PATH_B_90_OCTAHEDRON: SessionFormat = {
-  id: 'path-b-90-octa',
-  name: 'Path B — 90 Two-Pass (Octahedron)',
-  description:
-    'Trades critic-in-room dynamic for two iterations. 3 parallel-pair slots × 10 min, twice, with critics writing notes between passes.',
-  provenance: 'experimental',
-  shape: 'octahedron',
-  totalMinutes: 90,
-  stages: [
-    { id: 'opening', kind: 'opening', label: 'Opening + lobby', minutes: 5 },
-    { id: 'jostle', kind: 'problem-jostle', label: 'Problem Jostle', minutes: 10 },
-    { id: 'vote', kind: 'voting', label: 'Voting', minutes: 3 },
-    { id: 'rank', kind: 'topic-preference', label: 'Topic Preference', minutes: 3 },
-    { id: 'graph', kind: 'graph-reveal', label: 'Graph reveal', minutes: 4 },
-    {
-      id: 'resolve',
-      kind: 'outcome-resolve',
-      label: 'Outcome Resolve — 2 iterations × 3 parallel-pair slots × 10 min',
-      minutes: 65, // 2*3*10 + 1*5 break
-      iterations: 2,
-      slotsPerIteration: 3,
-      slotMinutes: 10,
-      criticPolicy: 'async-notes-only',
-      betweenIterationBreakMinutes: 5,
-    },
-  ],
-  caveats: [
-    'Critics never enter the room — loses the live-critique energy.',
-    'async-notes-only is not yet implemented in the scheduler.',
-    'Two iterations satisfies Beer rhythm partially (canon is 3).',
-  ],
-};
-
 export const EXPERIMENTAL_2ROUND_60_OCTAHEDRON: SessionFormat = {
   id: 'experimental-2round-60-octa',
-  name: 'Experimental 2-Slot 60 (Octahedron)',
+  name: 'Top four 60 (Octahedron)',
   description:
     '60 minutes, 2 slots × 20 min, parallel-pair meetings on 4 of 6 topics (drop the bottom two by vote). Everyone is active in both slots as contributor or critic.',
   provenance: 'experimental',
@@ -549,8 +514,6 @@ export const SESSION_FORMATS = {
   [CANONICAL_ICOSAHEDRON.id]: CANONICAL_ICOSAHEDRON,
   // Today's experimental octahedron variants
   [COMPACT_60_OCTAHEDRON.id]: COMPACT_60_OCTAHEDRON,
-  [PATH_A_90_OCTAHEDRON.id]: PATH_A_90_OCTAHEDRON,
-  [PATH_B_90_OCTAHEDRON.id]: PATH_B_90_OCTAHEDRON,
   [EXPERIMENTAL_2ROUND_60_OCTAHEDRON.id]: EXPERIMENTAL_2ROUND_60_OCTAHEDRON,
   [REVERBERATION_120_OCTAHEDRON.id]: REVERBERATION_120_OCTAHEDRON,
 } as const satisfies Record<string, SessionFormat>;
