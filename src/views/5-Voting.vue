@@ -5,6 +5,7 @@ import { useSessionStore } from '@/stores/session';
 import { useParticipantsStore } from '@/stores/participants';
 import { useVotingStore } from '@/stores/voting';
 import { encodedShapeForHeadcount, getShape, type ShapeName } from '@/util';
+import { getFormat, type SessionFormatId } from '@/util/session-formats';
 import ParticipantAvatar from '@/components/ParticipantAvatar.vue';
 import ParticipantSidePanel from '@/components/ParticipantSidePanel.vue';
 import RightPopoutVote from '@/components/RightPopoutVote.vue';
@@ -18,6 +19,21 @@ const shapeName = computed<ShapeName>(
   () => session.session?.locked_shape ?? encodedShapeForHeadcount(participants.active.length),
 );
 const N = computed(() => getShape(shapeName.value).topicCount);
+/**
+ * Some formats schedule meetings for only the top `topicsCovered` topics
+ * (e.g. "Top four 60" drops the bottom 2 of 6 by vote). We still vote all
+ * topicCount topics into existence so the polyhedron has its vertices, but
+ * slots beyond `meetingTopicCount` are visually marked as "will be dropped".
+ */
+const meetingTopicCount = computed(() => {
+  const id = session.session?.session_format_id;
+  if (!id) return N.value;
+  const f = getFormat(id as SessionFormatId);
+  const or = f?.stages.find((s) => s.kind === 'outcome-resolve');
+  if (!or || or.kind !== 'outcome-resolve') return N.value;
+  return or.topicsCovered ?? N.value;
+});
+const droppedCount = computed(() => Math.max(0, N.value - meetingTopicCount.value));
 const topSlots = computed(() => {
   const top = voting.topNCards(N.value);
   return Array.from({ length: N.value }, (_, i) => top[i] ?? null);
@@ -75,12 +91,16 @@ function mergeTitle(m: { card_a: string | null; card_b: string | null }) {
       <header class="dq">{{ drivingQuestion }}</header>
 
       <section class="top">
-        <div v-for="(c, i) in topSlots" :key="i" class="slot">
+        <div v-for="(c, i) in topSlots" :key="i" class="slot" :class="{ dropped: i >= meetingTopicCount }">
           <span class="rank">{{ i + 1 }}</span>
+          <span v-if="i >= meetingTopicCount" class="drop-badge" title="This topic will not get a team meeting in this format">drops</span>
           <div v-if="c" class="slot-card">{{ c.title }}<span class="vc">{{ voting.voteCountByCard.get(c.id) ?? 0 }}</span></div>
           <div v-else class="slot-empty">—</div>
         </div>
       </section>
+      <p v-if="droppedCount > 0" class="drop-note">
+        This format only gives team meetings to the top {{ meetingTopicCount }} topics — the bottom {{ droppedCount }} by vote will be skipped.
+      </p>
 
       <p class="hint">You have <strong>{{ myRemaining }}</strong> votes left · click a card to vote · drag one card onto another to propose a merge</p>
 
@@ -129,7 +149,11 @@ function mergeTitle(m: { card_a: string | null; card_b: string | null }) {
 .main { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 .dq { text-align: center; padding: 0.6rem; opacity: 0.7; border-bottom: 1px solid #1b2236; }
 .top { height: 20vh; display: flex; gap: 0.5rem; padding: 0.5rem; overflow-x: auto; align-items: stretch; }
-.slot { flex: 1 0 110px; border: 1px dashed #2a3350; border-radius: 10px; padding: 0.4rem; position: relative; display: grid; }
+.slot { flex: 1 0 110px; border: 1px dashed #2a3350; border-radius: 10px; padding: 0.4rem; position: relative; display: grid; transition: opacity 0.15s, border-color 0.15s; }
+.slot.dropped { opacity: 0.5; border-style: solid; border-color: #3a2a2a; background: rgba(96, 32, 32, 0.08); }
+.slot.dropped .slot-card .vc { color: #9fb0d8; }
+.drop-badge { position: absolute; top: 4px; right: 6px; font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.05em; color: #e8a48b; background: rgba(96, 32, 32, 0.3); padding: 0.1rem 0.4rem; border-radius: 999px; }
+.drop-note { text-align: center; opacity: 0.7; font-size: 0.78rem; color: #e8a48b; margin: 0.2rem 0 0; padding: 0 0.5rem; }
 .rank { position: absolute; top: 4px; left: 6px; opacity: 0.5; font-size: 0.8rem; }
 .slot-card { align-self: center; text-align: center; font-size: 0.85rem; }
 .slot-card .vc { display: block; color: #5ad17a; font-weight: 700; }

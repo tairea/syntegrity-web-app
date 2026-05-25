@@ -22,8 +22,11 @@ import { storeToRefs } from 'pinia';
 import { useScheduleStore, LOBBY_OPEN_OFFSET_MS } from '@/stores/schedule';
 import { supabase } from '@/services/supabase';
 import { getShape, type ShapeName } from '@/util';
+import { getFormat, type SessionFormat, type SessionFormatId } from '@/util/session-formats';
 import PolyhedronScene, { type SceneNode } from '@/components/PolyhedronScene.vue';
 import ParticipantAvatar from '@/components/ParticipantAvatar.vue';
+import FormatInfo from '@/components/FormatInfo.vue';
+import SessionTimetable from '@/components/SessionTimetable.vue';
 
 const props = defineProps<{ code: string }>();
 const route = useRoute();
@@ -82,6 +85,14 @@ const lobbyOpen = computed(() => msUntilLobbyOpen.value <= 0);
 
 const shapeName = computed<ShapeName | null>(() => session.value?.locked_shape ?? null);
 const shapeInfo = computed(() => (shapeName.value ? getShape(shapeName.value) : null));
+
+/** The SessionFormat the host picked at /schedule time — drives the timetable. */
+const sessionFormat = computed<SessionFormat | null>(() => {
+  const id = session.value?.session_format_id;
+  if (!id) return null;
+  try { return getFormat(id as SessionFormatId) ?? null; }
+  catch { return null; }
+});
 
 const inviteLink = computed(() =>
   session.value ? `${window.location.origin}/scheduled/${session.value.code}` : '',
@@ -376,8 +387,11 @@ function copyLink(): void {
         </div>
       </section>
 
-      <section class="slots">
-        <h2>{{ commitments.length }} / {{ capacity }} participants signed up for this session</h2>
+      <section class="panel slots-panel">
+        <header class="panel-head">
+          <h2 class="panel-title">Session participants</h2>
+          <p class="panel-sub">{{ commitments.length }} / {{ capacity }} signed up</p>
+        </header>
         <div class="slot-grid">
           <template v-for="(c, i) in edgeNodes" :key="i">
             <div v-if="c" class="slot filled" :class="{ mine: myCommitment?.id === c.id }">
@@ -386,12 +400,23 @@ function copyLink(): void {
               <button v-if="myCommitment?.id === c.id" class="slot-remove" @click="removeMe">Remove me</button>
             </div>
             <button v-else class="slot empty" @click="openCommit">
-              <ParticipantAvatar :id="`empty-${i}`" name="?" :avatar-url="null" :size="36" />
+              <span class="empty-avatar" aria-hidden="true">?</span>
               <span class="slot-empty-text">Join this session</span>
+              <span class="slot-empty-arrow" aria-hidden="true">→</span>
             </button>
           </template>
         </div>
         <p v-if="error" class="error">{{ error }}</p>
+      </section>
+
+      <!-- Recipe bullets + timetable for the format the host picked. -->
+      <section v-if="sessionFormat" class="panel format-panel">
+        <header class="panel-head">
+          <h2 class="panel-title">Session Format</h2>
+          <p class="panel-sub">What this session looks like, end to end.</p>
+        </header>
+        <FormatInfo :format="sessionFormat" />
+        <SessionTimetable :format="sessionFormat" class="format-timetable" />
       </section>
     </div>
 
@@ -439,6 +464,14 @@ function copyLink(): void {
 .center-msg { min-height: 70vh; display: grid; place-items: center; text-align: center; gap: 0.4rem; }
 
 .layout { width: min(960px, 96vw); margin: 0 auto; display: grid; gap: 1.75rem; }
+
+/* ── Panels (Session participants, Session Format) ─────────── */
+.panel { width: min(720px, 96vw); margin: 1.5rem auto 0; display: grid; gap: 0.9rem; }
+.panel:first-of-type { margin-top: 0.5rem; }
+.panel-head { text-align: center; display: grid; gap: 0.25rem; }
+.panel-title { margin: 0; font-size: 1.05rem; font-weight: 600; color: #e6ecff; letter-spacing: 0.01em; }
+.panel-sub { margin: 0; color: #9fb0d8; font-size: 0.85rem; }
+.format-timetable { margin-top: 0.4rem; }
 
 /* ── Sticky driving question ────────────────────────────────── */
 .dq {
@@ -494,21 +527,43 @@ button { font: inherit; border-radius: 10px; padding: 0.7rem 1.2rem; cursor: poi
 .cd-u { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.08em; color: #6f7c98; }
 
 /* ── Slots ──────────────────────────────────────────────────── */
-.slots h2 { margin: 0 0 0.8rem; font-size: 1rem; font-weight: 600; color: #cdd6f4; }
-.slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0.5rem; }
-.slot { background: #11162a; border: 1px solid #2a3350; border-radius: 10px; padding: 0.55rem 0.8rem; display: flex; align-items: center; gap: 0.6rem; min-height: 56px; }
+.slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.6rem; }
+.slot { background: #11162a; border: 1px solid #2a3350; border-radius: 10px; padding: 0.55rem 0.8rem; display: flex; align-items: center; gap: 0.65rem; min-height: 56px; }
 .slot.filled { color: #e6ecff; }
 .slot.filled.mine { border-color: #4f7cff; box-shadow: 0 0 0 1px rgba(79,124,255,0.3); }
 .slot-name { flex: 1; font-size: 0.9rem; }
 .slot-remove { background: transparent; border: 1px solid #6c2a30; color: #e06c75; padding: 0.3rem 0.6rem; border-radius: 8px; font-size: 0.75rem; }
+
+/* Prominent join CTA — solid gradient, lifted, with arrow affordance. */
 .slot.empty {
-  background: #0c0f18; color: #7aa2ff; border-style: dashed; cursor: pointer;
-  justify-content: flex-start; text-align: left;
+  background: linear-gradient(135deg, #3358d8 0%, #4f7cff 100%);
+  color: #fff;
+  border: 1px solid #6b94ff;
+  cursor: pointer;
+  justify-content: flex-start;
+  text-align: left;
+  font-weight: 500;
+  box-shadow: 0 4px 14px rgba(79, 124, 255, 0.28);
+  transition: transform 0.12s, box-shadow 0.12s, background 0.12s;
 }
-.slot.empty:hover { background: #131a30; border-color: #4f7cff; }
-.slot-empty-text { font-size: 0.92rem; }
+.slot.empty:hover {
+  background: linear-gradient(135deg, #3d65e8 0%, #6a93ff 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(79, 124, 255, 0.42);
+}
+.slot.empty:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.empty-avatar {
+  width: 36px; height: 36px; border-radius: 50%; flex: none;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  display: grid; place-items: center;
+  font-weight: 700; color: #fff; font-size: 1.05rem;
+}
+.slot-empty-text { flex: 1; font-size: 0.95rem; }
+.slot-empty-arrow { color: rgba(255, 255, 255, 0.9); font-size: 1.1rem; line-height: 1; }
 
 .error { color: #e06c75; margin: 0.5rem 0 0; }
+
 
 /* ── Modal (ProfileForm-styled) ─────────────────────────────── */
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: grid; place-items: center; z-index: 200; padding: 1rem; }

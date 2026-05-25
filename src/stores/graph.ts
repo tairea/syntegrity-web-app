@@ -21,7 +21,9 @@ import {
   type RoleAssignmentResult,
   type SessionSchedule,
   type Topic,
+  type TopicId,
 } from '@/util';
+import { getFormat, type SessionFormatId } from '@/util/session-formats';
 import { useSessionStore } from './session';
 import { useVotingStore } from './voting';
 import { useParticipantsStore } from './participants';
@@ -75,6 +77,25 @@ export const useGraphStore = defineStore('graph', () => {
     schedules.value = { ...schedules.value, [r.method]: r.schedule as SessionSchedule };
   }
 
+  /**
+   * If the session's format declares `topicsCovered < topicCount`, return the
+   * top `topicsCovered` topic ids by vote rank (Topic.vertexIndex is assigned
+   * in rank order in `finalizedTopics`, so the first N entries are the highest
+   * voted). Otherwise return undefined and the scheduler runs every topic.
+   */
+  function activeTopicIds(topics: Topic[]): TopicId[] | undefined {
+    const session = useSessionStore();
+    const id = session.session?.session_format_id;
+    if (!id) return undefined;
+    const f = getFormat(id as SessionFormatId);
+    const or = f?.stages.find((s) => s.kind === 'outcome-resolve');
+    if (!or || or.kind !== 'outcome-resolve') return undefined;
+    const covered = or.topicsCovered ?? topics.length;
+    if (covered >= topics.length) return undefined;
+    // finalizedTopics is rank-ordered (highest-voted first); take the prefix.
+    return topics.slice(0, covered).map((t) => t.id);
+  }
+
   /** Compute a method if not already cached, persist, and store locally. */
   async function compute(method: AssignmentMethod): Promise<void> {
     if (results.value[method] || computing.value[method]) return;
@@ -82,7 +103,13 @@ export const useGraphStore = defineStore('graph', () => {
     try {
       const input = buildInput();
       const result = method === 'algorithm' ? assignRolesAlgorithm(input) : await assignRolesOpenRouter(input);
-      const schedule = buildSchedule({ shape: input.shape, assignment: result, topics: input.topics, participants: input.participants });
+      const schedule = buildSchedule({
+        shape: input.shape,
+        assignment: result,
+        topics: input.topics,
+        participants: input.participants,
+        activeTopicIds: activeTopicIds(input.topics),
+      });
       results.value = { ...results.value, [method]: result };
       schedules.value = { ...schedules.value, [method]: schedule };
       const session = useSessionStore();

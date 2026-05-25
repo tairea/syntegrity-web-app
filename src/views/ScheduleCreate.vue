@@ -12,10 +12,13 @@ import { useRouter } from 'vue-router';
 import { getShape, SHAPE_META, type ShapeName } from '@/util';
 import {
   CANONICAL_ICOSAHEDRON, CANONICAL_TETRAHEDRON, REVERBERATION_120_OCTAHEDRON,
-  getFormat, listFormatsForShape, type SessionFormat, type SessionFormatId, type Stage,
+  getFormat, listFormatsForShape, type SessionFormat, type SessionFormatId,
 } from '@/util/session-formats';
+import { formatDuration } from '@/util/timetable';
 import { useScheduleStore } from '@/stores/schedule';
 import PolyhedronScene, { type SceneNode } from '@/components/PolyhedronScene.vue';
+import FormatInfo from '@/components/FormatInfo.vue';
+import SessionTimetable from '@/components/SessionTimetable.vue';
 import WorldClockMap from '@/components/WorldClockMap.vue';
 import { SOURCE_ZONES } from '@/util/world-clock-cities';
 import { wallTimeToUtc } from '@/util/world-clock';
@@ -168,7 +171,7 @@ const REVERBERATION_120_OCTAHEDRON = {
     { id: 'rank', kind: 'topic-preference', label: 'Topic Preference', minutes: 3 },
     { id: 'graph', kind: 'graph-reveal', label: 'Graph reveal', minutes: 3 },
     { id: 'resolve', kind: 'outcome-resolve',
-      label: 'Outcome Resolve — 1 iteration × 3 parallel-pair slots × 20 min',
+      label: 'Team Meetings — 1 iteration × 3 parallel-pair slots × 20 min',
       minutes: 60, iterations: 1, slotsPerIteration: 3, slotMinutes: 20,
       criticPolicy: 'split-critics-in-room' },
     { id: 'regroup', kind: 'custom', label: 'Regroup in Zoom main', minutes: 5, notes: 'Move out of breakouts; LLM synthesis already running.' },
@@ -226,7 +229,6 @@ const previewVertexLabels = computed<string[]>(() => {
 
 const formatOptions = computed<SessionFormat[]>(() => listFormatsForShape(shape.value));
 const selectedFormat = computed<SessionFormat>(() => getFormat(formatId.value));
-const shapeMeta = computed(() => SHAPE_META[selectedFormat.value.shape]);
 
 /** Pulls the iteration count from the format's OutcomeResolve stage, if any. */
 function iterationsOf(f: SessionFormat): number {
@@ -242,164 +244,6 @@ function pickShape(s: ShapeName): void {
   formatId.value = (available.find((f) => f.id === def)?.id as SessionFormatId)
     ?? (available[0]?.id as SessionFormatId);
 }
-
-function ordinal(n: number): string {
-  const s = ['th', 'st', 'nd', 'rd'];
-  const v = n % 100;
-  return `${n}${s[(v - 20) % 10] ?? s[v] ?? s[0]}`;
-}
-
-function formatDuration(mins: number): string {
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  if (h === 0) return `${m}m`;
-  if (m === 0) return `${h}h`;
-  return `${h}h ${m}m`;
-}
-
-interface StandardRow {
-  kind: 'standard';
-  id: string;
-  label: string;
-  minutes: number;
-  sub?: string;
-}
-interface Meeting {
-  topic: number;       // 1-based topic index
-  members: number[];   // 1-based participant ids
-  critics: number[];
-}
-interface SlotPlacement {
-  meetings: Meeting[];
-  idle: number[];
-}
-interface OutcomeResolveRow {
-  kind: 'outcome-resolve';
-  id: string;
-  label: string;
-  minutes: number;
-  iterations: number;
-  slotsPerIteration: number;
-  slotMinutes: number;
-  concurrency: number;
-  criticPolicy: string;
-  betweenIterationBreakMinutes: number;
-  /** [iteration][slot] = SlotPlacement. */
-  schedule: SlotPlacement[][];
-}
-type TimetableRow = StandardRow | OutcomeResolveRow;
-
-// Stages bundled into the "App opening" row — these are app-driven and
-// short relative to Outcome Resolve, so we don't itemise them.
-const APP_OPENING_KINDS = new Set(['opening', 'problem-jostle', 'voting', 'topic-preference', 'graph-reveal']);
-
-/**
- * Build a synthetic but consistent placement of every participant across
- * iteration × slot × room. The real scheduler picks the conflict-free
- * assignment from the actual shape struts; this preview rotates participants
- * deterministically so the user can see *every person accounted for* in every
- * slot. Members are cycled, then critics are placed per criticPolicy.
- */
-function buildOutcomePlacement(
-  stage: Extract<Stage, { kind: 'outcome-resolve' }>,
-  shapeMeta: { participantCount: number; topicCount: number; teamSize: number },
-): { schedule: SlotPlacement[][]; concurrency: number } {
-  const topicsCovered = stage.topicsCovered ?? shapeMeta.topicCount;
-  const concurrency = Math.max(1, Math.ceil(topicsCovered / stage.slotsPerIteration));
-  const total = shapeMeta.participantCount;
-  const teamSize = shapeMeta.teamSize;
-
-  const schedule: SlotPlacement[][] = [];
-  for (let it = 0; it < stage.iterations; it++) {
-    const slots: SlotPlacement[] = [];
-    for (let s = 0; s < stage.slotsPerIteration; s++) {
-      // Rotate the participant order per (iteration, slot) so the same person
-      // visibly moves through different rooms across the schedule.
-      const shift = (it * teamSize * concurrency + s * teamSize * concurrency) % total;
-      const order = Array.from({ length: total }, (_, i) => ((i + shift) % total) + 1);
-
-      const startTopic = s * concurrency;
-      const endTopic = Math.min(startTopic + concurrency, topicsCovered);
-      const meetings: Meeting[] = [];
-      let cursor = 0;
-      for (let t = startTopic; t < endTopic; t++) {
-        const members = order.slice(cursor, cursor + teamSize);
-        cursor += teamSize;
-        meetings.push({ topic: t + 1, members, critics: [] });
-      }
-      const remaining = order.slice(cursor);
-
-      let idle: number[] = [];
-      if (meetings.length === 0) {
-        idle = remaining;
-      } else if (stage.criticPolicy === 'all-critics-in-room') {
-        for (const m of meetings) m.critics = [...remaining];
-      } else if (stage.criticPolicy === 'split-critics-in-room') {
-        const perMeeting = Math.floor(remaining.length / meetings.length);
-        const extra = remaining.length % meetings.length;
-        let r = 0;
-        for (let m = 0; m < meetings.length; m++) {
-          const count = perMeeting + (m < extra ? 1 : 0);
-          meetings[m].critics = remaining.slice(r, r + count);
-          r += count;
-        }
-      } else {
-        idle = remaining;
-      }
-      slots.push({ meetings, idle });
-    }
-    schedule.push(slots);
-  }
-  return { schedule, concurrency };
-}
-
-function stageRows(stages: Stage[], shapeMeta: { participantCount: number; topicCount: number; teamSize: number }): TimetableRow[] {
-  const rows: TimetableRow[] = [];
-  let appBucket = 0;
-  const flushApp = () => {
-    if (appBucket > 0) {
-      rows.push({
-        kind: 'standard',
-        id: `app-opening-${rows.length}`,
-        label: 'App opening',
-        minutes: appBucket,
-        sub: 'Lobby → Jostle → Vote → Rank → Graph reveal',
-      });
-      appBucket = 0;
-    }
-  };
-  for (const s of stages) {
-    if (APP_OPENING_KINDS.has(s.kind)) { appBucket += s.minutes; continue; }
-    flushApp();
-    if (s.kind === 'outcome-resolve') {
-      const { schedule, concurrency } = buildOutcomePlacement(s, shapeMeta);
-      rows.push({
-        kind: 'outcome-resolve',
-        id: s.id, label: s.label, minutes: s.minutes,
-        iterations: s.iterations,
-        slotsPerIteration: s.slotsPerIteration,
-        slotMinutes: s.slotMinutes,
-        concurrency,
-        criticPolicy: s.criticPolicy,
-        betweenIterationBreakMinutes: s.betweenIterationBreakMinutes ?? 0,
-        schedule,
-      });
-    } else if (s.kind === 'reverberation') {
-      const p = s.parts;
-      rows.push({
-        kind: 'standard',
-        id: s.id, label: s.label, minutes: s.minutes,
-        sub: `LLM ${p.llmSynthesisMinutes}m · Report-back ${p.teamReportbackMinutes}m · Converge ${p.groupConvergenceMinutes}m`,
-      });
-    } else {
-      rows.push({ kind: 'standard', id: s.id, label: s.label, minutes: s.minutes });
-    }
-  }
-  flushApp();
-  return rows;
-}
-
-const timetable = computed(() => stageRows(selectedFormat.value.stages, SHAPE_META[selectedFormat.value.shape]));
 
 /** UTC Date for the chosen wall-clock (date + time + zone) — drives the map. */
 const baseUtc = computed<Date>(() => {
@@ -580,94 +424,12 @@ async function submit() {
               {{ f.name }} — {{ formatDuration(f.totalMinutes) }} — {{ iterationsOf(f) }} iteration{{ iterationsOf(f) === 1 ? '' : 's' }}
             </option>
           </select>
-          <div class="format-info" :class="`prov-${selectedFormat.provenance}`">
-            <div class="format-meta">
-              <span class="provenance">{{ selectedFormat.provenance }}</span>
-            </div>
-            <p class="format-desc">{{ selectedFormat.description }}</p>
-            <ul v-if="selectedFormat.caveats?.length" class="caveats">
-              <li v-for="c in selectedFormat.caveats" :key="c">{{ c }}</li>
-            </ul>
-          </div>
+          <FormatInfo :format="selectedFormat" class="format-info-spacing" />
         </div>
 
         <div>
           <label class="lbl">Timetable</label>
-          <div class="timetable">
-            <template v-for="row in timetable" :key="row.id">
-              <div v-if="row.kind === 'standard'" class="t-row">
-                <div class="t-main">
-                  <span class="t-label">{{ row.label }}</span>
-                  <span class="t-mins">{{ row.minutes }} min</span>
-                </div>
-                <div v-if="row.sub" class="t-sub">{{ row.sub }}</div>
-              </div>
-
-              <div v-else class="t-row or-row">
-                <div class="t-main">
-                  <span class="t-label">{{ row.label }}</span>
-                  <span class="t-mins">{{ row.minutes }} min</span>
-                </div>
-                <div class="t-sub">
-                  {{ row.concurrency }} parallel meeting{{ row.concurrency === 1 ? '' : 's' }} per slot — {{ row.criticPolicy }}
-                </div>
-                <div class="or-iters">
-                  <div v-for="(slots, ii) in row.schedule" :key="ii" class="or-iter">
-                    <div v-if="row.iterations > 1" class="or-iter-label">Iteration {{ ii + 1 }}</div>
-                    <div class="or-grid" :style="{ gridTemplateColumns: `auto repeat(${row.concurrency}, minmax(0, 1fr)) auto` }">
-                      <template v-for="(slot, si) in slots" :key="si">
-                        <div class="or-slot-label">{{ row.slotMinutes }}m</div>
-                        <div v-for="meeting in slot.meetings" :key="`m-${si}-${meeting.topic}`" class="or-cell">
-                          <div class="or-cell-head">
-                            <span class="or-cell-main">Topic {{ meeting.topic }}</span>
-                            <span class="or-cell-sub">{{ ordinal(ii + 1) }} iteration</span>
-                          </div>
-                          <div class="people">
-                            <span v-for="p in meeting.members" :key="`mem-${p}`" class="pid member">{{ p }}</span>
-                            <template v-if="meeting.critics.length">
-                              <span class="pid-sep">·</span>
-                              <span v-for="p in meeting.critics" :key="`crit-${p}`" class="pid critic">{{ p }}</span>
-                            </template>
-                          </div>
-                          <div class="or-cell-foot">
-                            {{ meeting.members.length }} member{{ meeting.members.length === 1 ? '' : 's' }}<span v-if="meeting.critics.length"> · {{ meeting.critics.length }} critic{{ meeting.critics.length === 1 ? '' : 's' }}</span>
-                          </div>
-                        </div>
-                        <div v-for="n in (row.concurrency - slot.meetings.length)" :key="`e-${si}-${n}`" class="or-cell empty"></div>
-                        <div class="or-idle" :class="{ none: !slot.idle.length }">
-                          <template v-if="slot.idle.length">
-                            <span class="or-idle-label">sitting out</span>
-                            <div class="people idle">
-                              <span v-for="p in slot.idle" :key="`idle-${si}-${p}`" class="pid idle">{{ p }}</span>
-                            </div>
-                          </template>
-                          <template v-else>
-                            <span class="or-idle-label all-in">all {{ shapeMeta.participantCount }} engaged</span>
-                          </template>
-                        </div>
-                      </template>
-                    </div>
-                    <div v-if="ii < row.schedule.length - 1 && row.betweenIterationBreakMinutes" class="or-break">
-                      Break — {{ row.betweenIterationBreakMinutes }} min
-                    </div>
-                  </div>
-                </div>
-                <div class="or-legend">
-                  <span class="pid member sm">1</span> member
-                  <span v-if="row.criticPolicy === 'all-critics-in-room' || row.criticPolicy === 'split-critics-in-room'" class="legend-sep">·</span>
-                  <span v-if="row.criticPolicy === 'all-critics-in-room' || row.criticPolicy === 'split-critics-in-room'" class="pid critic sm">1</span>
-                  <span v-if="row.criticPolicy === 'all-critics-in-room' || row.criticPolicy === 'split-critics-in-room'"> critic</span>
-                  <span class="legend-sep">·</span>
-                  <span class="pid idle sm">1</span> sitting out
-                  <span class="legend-note">— preview placement; the real per-person assignment is computed when the session starts.</span>
-                </div>
-              </div>
-            </template>
-            <div class="t-total">
-              <span>Total</span>
-              <span>{{ formatDuration(selectedFormat.totalMinutes) }}</span>
-            </div>
-          </div>
+          <SessionTimetable :format="selectedFormat" />
         </div>
 
         <p v-if="error" class="error">{{ error }}</p>
@@ -793,61 +555,8 @@ button { font: inherit; border-radius: 10px; padding: 0.7rem 1.2rem; cursor: poi
 .new-format-btn { background: transparent; border: 1px solid #2a3350; color: #7aa2ff; padding: 0.35rem 0.7rem; border-radius: 8px; font-size: 0.78rem; cursor: pointer; transition: border-color 0.15s, background 0.15s; }
 .new-format-btn:hover { border-color: #4f7cff; background: #131a30; }
 
-/* Format dropdown + info pane */
-.format-info { margin-top: 0.6rem; background: #11162a; border: 1px solid #2a3350; border-radius: 10px; padding: 0.9rem 1rem; }
-.format-meta { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
-.provenance { padding: 0.15rem 0.5rem; border-radius: 999px; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; }
-.prov-canonical-beer .provenance { background: #1a3a2a; color: #8be8a8; }
-.prov-canonical-truss .provenance { background: #1a2f3a; color: #8bc4e8; }
-.prov-experimental .provenance { background: #3a2f1a; color: #e8c48b; }
-.format-desc { font-size: 0.88rem; color: #cdd6f4; line-height: 1.5; margin: 0; }
-.caveats { margin: 0.6rem 0 0; padding-left: 1.1rem; font-size: 0.78rem; color: #6f7c98; }
-.caveats li { margin: 0.15rem 0; }
-
-/* Timetable */
-.timetable { background: #0c0f18; border: 1px solid #2a3350; border-radius: 10px; overflow: hidden; }
-.t-row { padding: 0.6rem 0.9rem; border-bottom: 1px solid #1a2138; }
-.t-row:last-of-type { border-bottom: none; }
-.t-main { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
-.t-label { color: #e6ecff; }
-.t-mins { color: #9fb0d8; font-variant-numeric: tabular-nums; }
-.t-sub { font-size: 0.78rem; color: #6f7c98; margin-top: 0.2rem; }
-.t-total { display: flex; justify-content: space-between; padding: 0.7rem 0.9rem; background: #11162a; color: #e6ecff; font-weight: 600; border-top: 1px solid #2a3350; }
-
-/* Outcome Resolve grid (rows = time slots, cols = parallel meetings) */
-.or-row { background: #0a0d16; }
-.or-iters { display: grid; gap: 0.6rem; margin-top: 0.6rem; }
-.or-iter-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: #7aa2ff; margin-bottom: 0.3rem; }
-.or-grid { display: grid; gap: 4px; align-items: stretch; }
-.or-slot-label { font-size: 0.72rem; color: #6f7c98; padding: 0.55rem 0.5rem 0 0; align-self: start; font-variant-numeric: tabular-nums; }
-.or-cell { background: #1a2138; border: 1px solid #2a3350; border-radius: 6px; padding: 0.5rem 0.5rem; display: flex; flex-direction: column; gap: 0.4rem; }
-.or-cell-head { display: flex; flex-direction: column; align-items: center; gap: 1px; }
-.or-cell-main { font-size: 0.82rem; color: #cdd6f4; line-height: 1.1; }
-.or-cell-sub { font-size: 0.62rem; color: #6f7c98; line-height: 1.1; }
-.or-cell-foot { font-size: 0.65rem; color: #6f7c98; text-align: center; }
-.or-cell.empty { background: transparent; border-style: dashed; border-color: #1a2138; }
-.or-break { font-size: 0.75rem; color: #6f7c98; padding: 0.4rem 0; text-align: center; border-top: 1px dashed #1a2138; margin-top: 0.4rem; }
-
-/* People badges */
-.people { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; align-items: center; }
-.pid { display: inline-flex; align-items: center; justify-content: center; min-width: 1.4em; height: 1.4em; padding: 0 0.3em; border-radius: 999px; font-size: 0.65rem; font-variant-numeric: tabular-nums; line-height: 1; }
-.pid.member { background: #2d3f6e; color: #e6ecff; }
-.pid.critic { background: transparent; color: #9fb0d8; border: 1px solid #3a456b; }
-.pid.idle { background: transparent; color: #6f7c98; border: 1px dashed #2a3350; }
-.pid.sm { font-size: 0.6rem; min-width: 1.2em; height: 1.2em; }
-.pid-sep { color: #3a456b; font-weight: 700; }
-
-/* Idle column (right side of each slot row) */
-.or-idle { padding: 0.5rem 0 0.5rem 0.6rem; border-left: 1px dashed #1a2138; min-width: 110px; display: flex; flex-direction: column; gap: 0.25rem; align-items: flex-start; }
-.or-idle.none { opacity: 0.6; }
-.or-idle-label { font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.05em; color: #6f7c98; }
-.or-idle-label.all-in { color: #8be8a8; }
-.people.idle { gap: 2px; }
-
-/* Legend */
-.or-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin-top: 0.6rem; font-size: 0.72rem; color: #9fb0d8; }
-.legend-sep { color: #3a456b; }
-.legend-note { color: #6f7c98; flex-basis: 100%; margin-top: 0.2rem; }
+/* FormatInfo card sits flush under the format dropdown. */
+.format-info-spacing { margin-top: 0.6rem; }
 
 /* New-format dialog */
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: grid; place-items: center; z-index: 200; padding: 1rem; }

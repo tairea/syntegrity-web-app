@@ -410,6 +410,22 @@ function computeFocusQuat(): THREE.Quaternion | null {
   return q2.multiply(q1);
 }
 
+// ── scroll-to-zoom (dolly camera along its view axis) ───────────────────────
+// Default camera.position.z is 3.2 (set in onMounted). The clamp keeps zoom in
+// a useful range: ~1.6 fills the viewport, ~7 gives a wide overview.
+const ZOOM_MIN_Z = 1.6;
+const ZOOM_MAX_Z = 7;
+function onWheel(e: WheelEvent) {
+  if (!camera) return;
+  // Prevent the page from scrolling while the cursor is over the canvas.
+  e.preventDefault();
+  // Exponential dolly so the feel is consistent across small/large deltas and
+  // touchpad pinch (pinch reports as wheel with ctrlKey on most browsers).
+  const intensity = e.ctrlKey ? 0.01 : 0.001;
+  const factor = Math.exp(e.deltaY * intensity);
+  camera.position.z = Math.max(ZOOM_MIN_Z, Math.min(ZOOM_MAX_Z, camera.position.z * factor));
+}
+
 // ── drag-to-rotate + click (raycast) ─────────────────────────────────────────
 let dragging = false;
 let moved = false;
@@ -482,6 +498,8 @@ onMounted(() => {
   host.value.appendChild(renderer.domElement);
 
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
+  // passive: false so preventDefault() actually blocks page scroll over the canvas.
+  renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
   window.addEventListener('pointermove', onPointerMove);
   window.addEventListener('pointerup', onPointerUp);
 
@@ -495,6 +513,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   cancelAnimationFrame(raf);
   ro?.disconnect();
+  renderer?.domElement.removeEventListener('wheel', onWheel);
   window.removeEventListener('pointermove', onPointerMove);
   window.removeEventListener('pointerup', onPointerUp);
   clearGroup();

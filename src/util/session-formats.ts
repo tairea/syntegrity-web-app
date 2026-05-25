@@ -301,7 +301,7 @@ export const CANONICAL_TETRAHEDRON: SessionFormat = {
     {
       id: 'resolve',
       kind: 'outcome-resolve',
-      label: 'Outcome Resolve — 3 iterations × 4 sequential meetings × 45 min',
+      label: 'Team Meetings — 3 iterations × 4 sequential meetings × 45 min',
       minutes: 3 * 4 * 45 + 2 * 20, // = 580
       iterations: 3,
       slotsPerIteration: 4,
@@ -336,7 +336,7 @@ export const CANONICAL_OCTAHEDRON: SessionFormat = {
     {
       id: 'resolve',
       kind: 'outcome-resolve',
-      label: 'Outcome Resolve — 3 iterations × 6 sequential meetings × 60 min',
+      label: 'Team Meetings — 3 iterations × 6 sequential meetings × 60 min',
       minutes: 3 * 6 * 60 + 2 * 30, // = 1140
       iterations: 3,
       slotsPerIteration: 6,
@@ -371,7 +371,7 @@ export const CANONICAL_ICOSAHEDRON: SessionFormat = {
     {
       id: 'resolve',
       kind: 'outcome-resolve',
-      label: 'Outcome Resolve — 3 iterations × 6 parallel-pair slots × 90 min',
+      label: 'Team Meetings — 3 iterations × 6 parallel-pair slots × 90 min',
       minutes: 3 * 6 * 90 + 2 * 60, // = 1740
       iterations: 3,
       slotsPerIteration: 6,
@@ -413,7 +413,7 @@ export const COMPACT_60_OCTAHEDRON: SessionFormat = {
     {
       id: 'resolve',
       kind: 'outcome-resolve',
-      label: 'Outcome Resolve — 1 iteration × 3 parallel-pair slots × 10 min',
+      label: 'Team Meetings — 1 iteration × 3 parallel-pair slots × 10 min',
       minutes: 30,
       iterations: 1,
       slotsPerIteration: 3,
@@ -446,7 +446,7 @@ export const EXPERIMENTAL_2ROUND_60_OCTAHEDRON: SessionFormat = {
     {
       id: 'resolve',
       kind: 'outcome-resolve',
-      label: 'Outcome Resolve — 1 iteration × 2 parallel-pair slots × 20 min',
+      label: 'Team Meetings — 1 iteration × 2 parallel-pair slots × 20 min',
       minutes: 40,
       iterations: 1,
       slotsPerIteration: 2,
@@ -455,10 +455,14 @@ export const EXPERIMENTAL_2ROUND_60_OCTAHEDRON: SessionFormat = {
       criticPolicy: 'split-critics-in-room',
     },
   ],
+  /**
+   * Drop rule: bottom-two votes cut. Voting still selects all 6 topics (needed
+   * to position people around the polyhedron's vertices), but only the top 4
+   * by vote actually receive team meetings. The format-bullets generator emits
+   * this whenever topicsCovered < shape.topicCount.
+   */
   caveats: [
-    'Drops 2 of 6 topics — pre-cluster harder upstream, or use the bottom-two votes as the cut.',
     'Single iteration — no Beer "three-iteration rhythm".',
-    'topicsCovered<topicCount and split-critics-in-room are not yet implemented in the scheduler.',
   ],
 };
 
@@ -479,7 +483,7 @@ export const REVERBERATION_120_OCTAHEDRON: SessionFormat = {
     {
       id: 'resolve',
       kind: 'outcome-resolve',
-      label: 'Outcome Resolve — 1 iteration × 3 parallel-pair slots × 20 min',
+      label: 'Team Meetings — 1 iteration × 3 parallel-pair slots × 20 min',
       minutes: 60,
       iterations: 1,
       slotsPerIteration: 3,
