@@ -534,33 +534,35 @@ button { font: inherit; border-radius: 10px; padding: 0.7rem 1.2rem; cursor: poi
 .slot-name { flex: 1; font-size: 0.9rem; }
 .slot-remove { background: transparent; border: 1px solid #6c2a30; color: #e06c75; padding: 0.3rem 0.6rem; border-radius: 8px; font-size: 0.75rem; }
 
-/* Prominent join CTA — solid gradient, lifted, with arrow affordance. */
+/* Join CTA — softer tinted card; clear but not shouting. */
 .slot.empty {
-  background: linear-gradient(135deg, #3358d8 0%, #4f7cff 100%);
-  color: #fff;
-  border: 1px solid #6b94ff;
+  background: rgba(79, 124, 255, 0.07);
+  color: #c8d4f5;
+  border: 1px solid #2f3a5e;
   cursor: pointer;
   justify-content: flex-start;
   text-align: left;
   font-weight: 500;
-  box-shadow: 0 4px 14px rgba(79, 124, 255, 0.28);
-  transition: transform 0.12s, box-shadow 0.12s, background 0.12s;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
 }
 .slot.empty:hover {
-  background: linear-gradient(135deg, #3d65e8 0%, #6a93ff 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(79, 124, 255, 0.42);
+  background: rgba(79, 124, 255, 0.14);
+  border-color: #4f7cff;
+  color: #e6ecff;
 }
-.slot.empty:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.slot.empty:focus-visible { outline: 2px solid #4f7cff; outline-offset: 2px; }
 .empty-avatar {
   width: 36px; height: 36px; border-radius: 50%; flex: none;
-  background: rgba(255, 255, 255, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.5);
+  background: transparent;
+  border: 1px solid #3a456b;
   display: grid; place-items: center;
-  font-weight: 700; color: #fff; font-size: 1.05rem;
+  font-weight: 600; color: #7aa2ff; font-size: 1rem;
+  transition: border-color 0.12s, color 0.12s;
 }
+.slot.empty:hover .empty-avatar { border-color: #4f7cff; color: #a8c0ff; }
 .slot-empty-text { flex: 1; font-size: 0.95rem; }
-.slot-empty-arrow { color: rgba(255, 255, 255, 0.9); font-size: 1.1rem; line-height: 1; }
+.slot-empty-arrow { color: #6f7c98; font-size: 1.05rem; line-height: 1; transition: color 0.12s, transform 0.12s; }
+.slot.empty:hover .slot-empty-arrow { color: #a8c0ff; transform: translateX(2px); }
 
 .error { color: #e06c75; margin: 0.5rem 0 0; }
 
