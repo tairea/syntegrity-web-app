@@ -144,10 +144,10 @@ const countdown = computed<CountdownParts>(() => {
 
 const countdownLabel = computed(() => {
   const c = countdown.value;
-  if (c.past) return 'Session has started';
-  if (c.days > 0) return 'Session starts in';
-  if (c.hours > 0) return 'Session starts in';
-  if (c.minutes >= 10) return 'Session starts in';
+  if (c.past) return 'Syntegrity session has started';
+  if (c.days > 0) return 'Syntegrity session starts in';
+  if (c.hours > 0) return 'Syntegrity session starts in';
+  if (c.minutes >= 10) return 'Syntegrity session starts in';
   return 'Starting soon —';
 });
 
