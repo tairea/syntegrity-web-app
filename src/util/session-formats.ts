@@ -390,11 +390,13 @@ export const CANONICAL_ICOSAHEDRON: SessionFormat = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Experimental formats — designed in the prototype today (all octahedron)
+// Experimental formats — octahedron and tetrahedron variants designed in the prototype
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// All five compress Beer's protocol to a single hour-scale session. Each
-// sacrifices something specific from canon; the caveats spell it out.
+// All compress Beer's protocol to a single hour-scale session. Each sacrifices
+// something specific from canon; the caveats spell it out. Tetrahedron variants
+// are strictly sequential (every meeting overlaps in members), so they use
+// all-critics-in-room to keep all 6 participants active in every meeting.
 
 export const COMPACT_60_OCTAHEDRON: SessionFormat = {
   id: 'compact-60-octa',
@@ -507,6 +509,115 @@ export const REVERBERATION_120_OCTAHEDRON: SessionFormat = {
   ],
 };
 
+export const COMPACT_60_TETRAHEDRON: SessionFormat = {
+  id: 'compact-60-tetra',
+  name: 'Compact 60 (Tetrahedron)',
+  description:
+    '60-minute Syntegrity for 6 people. 1 iteration × 4 sequential meetings × 8 min covers all 4 topics. Tetrahedron meetings always include everyone (3 contributors + 3 critics), so nobody is idle.',
+  provenance: 'experimental',
+  shape: 'tetrahedron',
+  totalMinutes: 60,
+  stages: [
+    { id: 'opening', kind: 'opening', label: 'Opening + lobby', minutes: 5 },
+    { id: 'jostle', kind: 'problem-jostle', label: 'Problem Jostle', minutes: 10 },
+    { id: 'vote', kind: 'voting', label: 'Voting', minutes: 5 },
+    { id: 'rank', kind: 'topic-preference', label: 'Topic Preference', minutes: 3 },
+    { id: 'graph', kind: 'graph-reveal', label: 'Graph reveal', minutes: 2 },
+    {
+      id: 'resolve',
+      kind: 'outcome-resolve',
+      label: 'Team Meetings — 1 iteration × 4 sequential meetings × 8 min',
+      minutes: 32,
+      iterations: 1,
+      slotsPerIteration: 4,
+      slotMinutes: 8,
+      criticPolicy: 'all-critics-in-room',
+    },
+    { id: 'close', kind: 'custom', label: 'Close', minutes: 3, notes: 'One-sentence outcome per topic.' },
+  ],
+  caveats: [
+    'Single iteration — breaks Beer\'s "three-iteration rhythm" rule.',
+    '8 min per meeting is brutally tight; topics will be coarse.',
+  ],
+};
+
+export const EXPERIMENTAL_TOP3_60_TETRAHEDRON: SessionFormat = {
+  id: 'experimental-top3-60-tetra',
+  name: 'Top three 60 (Tetrahedron)',
+  description:
+    '60 minutes for 6 people. 1 iteration × 3 sequential meetings × 12 min on the top 3 voted topics (the lowest-voted topic is dropped from Outcome Resolve). All 6 participants in every meeting.',
+  provenance: 'experimental',
+  shape: 'tetrahedron',
+  totalMinutes: 60,
+  stages: [
+    { id: 'opening', kind: 'opening', label: 'Opening + lobby', minutes: 5 },
+    { id: 'jostle', kind: 'problem-jostle', label: 'Problem Jostle', minutes: 10 },
+    { id: 'vote', kind: 'voting', label: 'Voting', minutes: 4 },
+    { id: 'rank', kind: 'topic-preference', label: 'Topic Preference', minutes: 3 },
+    { id: 'graph', kind: 'graph-reveal', label: 'Graph reveal', minutes: 2 },
+    {
+      id: 'resolve',
+      kind: 'outcome-resolve',
+      label: 'Team Meetings — 1 iteration × 3 sequential meetings × 12 min',
+      minutes: 36,
+      iterations: 1,
+      slotsPerIteration: 3,
+      slotMinutes: 12,
+      topicsCovered: 3,
+      criticPolicy: 'all-critics-in-room',
+    },
+  ],
+  /**
+   * Drop rule: lowest-voted topic cut. Voting still selects all 4 topics
+   * (needed to position people around the tetrahedron's vertices), but only the
+   * top 3 by vote actually receive team meetings. The format-bullets generator
+   * emits this whenever topicsCovered < shape.topicCount.
+   */
+  caveats: [
+    'Single iteration — no Beer "three-iteration rhythm".',
+  ],
+};
+
+export const REVERBERATION_120_TETRAHEDRON: SessionFormat = {
+  id: 'reverberation-120-tetra',
+  name: 'Reverberation 120 (Tetrahedron)',
+  description:
+    '2 hours for 6 people. 1 iteration × 4 sequential meetings × 15 min covers all 4 topics, then a dedicated 30-min Reverberation stage: LLM-surfaced insights, team report-backs, and one converged thread.',
+  provenance: 'experimental',
+  shape: 'tetrahedron',
+  totalMinutes: 120,
+  stages: [
+    { id: 'opening', kind: 'opening', label: 'Opening + lobby', minutes: 5 },
+    { id: 'jostle', kind: 'problem-jostle', label: 'Problem Jostle', minutes: 12 },
+    { id: 'vote', kind: 'voting', label: 'Voting', minutes: 4 },
+    { id: 'rank', kind: 'topic-preference', label: 'Topic Preference', minutes: 3 },
+    { id: 'graph', kind: 'graph-reveal', label: 'Graph reveal', minutes: 3 },
+    {
+      id: 'resolve',
+      kind: 'outcome-resolve',
+      label: 'Team Meetings — 1 iteration × 4 sequential meetings × 15 min',
+      minutes: 60,
+      iterations: 1,
+      slotsPerIteration: 4,
+      slotMinutes: 15,
+      criticPolicy: 'all-critics-in-room',
+    },
+    { id: 'regroup', kind: 'custom', label: 'Regroup in Zoom main', minutes: 3, notes: 'Move out of breakouts; LLM synthesis already running on transcripts.' },
+    {
+      id: 'reverberation',
+      kind: 'reverberation',
+      label: 'Reverberation',
+      minutes: 30,
+      parts: { llmSynthesisMinutes: 10, teamReportbackMinutes: 15, groupConvergenceMinutes: 5 },
+      transcriptSource: 'zoom-cloud',
+    },
+  ],
+  caveats: [
+    'Single iteration — no Beer "three-iteration rhythm".',
+    'Reverberation requires a transcript pipeline (Zoom cloud or per-breakout recorder).',
+  ],
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Registry
 // ─────────────────────────────────────────────────────────────────────────────
@@ -516,10 +627,14 @@ export const SESSION_FORMATS = {
   [CANONICAL_TETRAHEDRON.id]: CANONICAL_TETRAHEDRON,
   [CANONICAL_OCTAHEDRON.id]: CANONICAL_OCTAHEDRON,
   [CANONICAL_ICOSAHEDRON.id]: CANONICAL_ICOSAHEDRON,
-  // Today's experimental octahedron variants
+  // Experimental octahedron variants
   [COMPACT_60_OCTAHEDRON.id]: COMPACT_60_OCTAHEDRON,
   [EXPERIMENTAL_2ROUND_60_OCTAHEDRON.id]: EXPERIMENTAL_2ROUND_60_OCTAHEDRON,
   [REVERBERATION_120_OCTAHEDRON.id]: REVERBERATION_120_OCTAHEDRON,
+  // Experimental tetrahedron variants
+  [COMPACT_60_TETRAHEDRON.id]: COMPACT_60_TETRAHEDRON,
+  [EXPERIMENTAL_TOP3_60_TETRAHEDRON.id]: EXPERIMENTAL_TOP3_60_TETRAHEDRON,
+  [REVERBERATION_120_TETRAHEDRON.id]: REVERBERATION_120_TETRAHEDRON,
 } as const satisfies Record<string, SessionFormat>;
 
 export type SessionFormatId = keyof typeof SESSION_FORMATS;
