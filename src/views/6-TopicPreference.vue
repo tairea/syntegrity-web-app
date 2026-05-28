@@ -6,6 +6,7 @@ import { useParticipantsStore } from '@/stores/participants';
 import { useVotingStore } from '@/stores/voting';
 import { usePreferenceStore } from '@/stores/preference';
 import { encodedShapeForHeadcount, getShape, type ShapeName } from '@/util';
+import { getFormat, type SessionFormatId } from '@/util/session-formats';
 import draggable from 'vuedraggable';
 import ParticipantSidePanel from '@/components/ParticipantSidePanel.vue';
 
@@ -19,7 +20,23 @@ const shapeName = computed<ShapeName>(
   () => session.session?.locked_shape ?? encodedShapeForHeadcount(participants.active.length),
 );
 const N = computed(() => getShape(shapeName.value).topicCount);
-const winners = computed(() => voting.topNCards(N.value));
+/**
+ * Mirrors 5-Voting.vue's meetingTopicCount: formats may schedule meetings for
+ * only the top `topicsCovered` topics (e.g. "Top 4 of 6"). The voting step
+ * shows all 6 with the bottom 2 visibly marked as dropped; the ranking step
+ * should rank only the topics that will actually be scheduled, so we slice
+ * the winners list to topicsCovered here.
+ */
+const meetingTopicCount = computed(() => {
+  const id = session.session?.session_format_id;
+  if (!id) return N.value;
+  const f = getFormat(id as SessionFormatId);
+  const or = f?.stages.find((s) => s.kind === 'outcome-resolve');
+  if (!or || or.kind !== 'outcome-resolve') return N.value;
+  return or.topicsCovered ?? N.value;
+});
+const droppedCount = computed(() => Math.max(0, N.value - meetingTopicCount.value));
+const winners = computed(() => voting.topNCards(meetingTopicCount.value));
 const cardById = computed(() => new Map(winners.value.map((c) => [c.id, c])));
 
 const order = ref<string[]>([]);
@@ -64,8 +81,11 @@ function undo() { if (myParticipantId.value) preference.undoSave(sessionId.value
 
     <main class="main">
       <header>
-        <h2>Rank the {{ N }} topics by your preference</h2>
-        <p>Drag to reorder — top is most preferred, bottom least. Save when you're happy.</p>
+        <h2>Rank the {{ meetingTopicCount }} topics by your preference</h2>
+        <p>
+          Drag to reorder — top is most preferred, bottom least. Save when you're happy.
+          <span v-if="droppedCount > 0" class="note"> (bottom {{ droppedCount }} dropped by format)</span>
+        </p>
       </header>
       <draggable
         v-model="order"
@@ -100,6 +120,7 @@ function undo() { if (myParticipantId.value) preference.undoSave(sessionId.value
 .main { overflow-y: auto; padding: 1.5rem; }
 header h2 { margin: 0; }
 header p { opacity: 0.65; margin: 0.3rem 0 1.2rem; }
+header p .note { color: #f5c66c; }
 .list { list-style: none; padding: 0; margin: 0 auto; max-width: 640px; display: flex; flex-direction: column; gap: 0.5rem; }
 .row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 0.75rem; background: #11141f; border: 1px solid #232b44; border-radius: 12px; padding: 0.7rem 0.9rem; cursor: grab; transition: box-shadow 0.15s, border-color 0.15s; }
 .row:hover { border-color: #2f3a5e; }
