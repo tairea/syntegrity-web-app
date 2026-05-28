@@ -200,6 +200,27 @@ async function maybePromote(): Promise<void> {
   }
 }
 
+/**
+ * Manual entry for non-committed visitors (host, anyone who lost their token,
+ * or a late walk-up). Promotes the session to live (idempotent) and routes to
+ * the live session shell — SessionShell will bounce to /profile if the user
+ * has no participant identity yet, so they can create one before joining the
+ * lobby.
+ */
+const entering = ref(false);
+async function enterLobby(): Promise<void> {
+  if (!session.value || entering.value) return;
+  entering.value = true;
+  error.value = '';
+  try {
+    await schedule.promoteToLive(session.value.id);
+    await router.replace({ name: 'session', params: { sessionId: session.value.id } });
+  } catch (e) {
+    entering.value = false;
+    error.value = (e as Error).message;
+  }
+}
+
 // ── Driving question editing (creator only) ──────────────────────────
 const editingDq = ref(false);
 const dqDraft = ref('');
@@ -348,7 +369,19 @@ function copyLink(): void {
         <p v-if="!lobbyOpen" class="when-countdown">
           Lobby opens 10 minutes before the start time.
         </p>
-        <p v-else class="when-countdown live">The lobby is open — joining now…</p>
+        <template v-else>
+          <!-- Committed participant: the page auto-routes via maybePromote, so
+               just acknowledge that briefly. -->
+          <p v-if="myCommitment" class="when-countdown live">The lobby is open — joining now…</p>
+          <!-- Host / anyone without a commit token: they need an explicit
+               affordance, otherwise the page is a dead end. -->
+          <div v-else class="when-countdown live enter-row">
+            <p class="lobby-open-msg">The lobby is open.</p>
+            <button class="primary enter-btn" :disabled="entering" @click="enterLobby">
+              {{ entering ? 'Entering…' : 'Enter the lobby →' }}
+            </button>
+          </div>
+        </template>
       </section>
 
       <section class="invite">
@@ -504,6 +537,9 @@ function copyLink(): void {
 .when-viewer { color: #9fb0d8; font-size: 0.9rem; margin: 0.2rem 0 0; }
 .when-countdown { color: #6f7c98; font-size: 0.85rem; margin: 0.6rem 0 0; }
 .when-countdown.live { color: #8be8a8; }
+.enter-row { display: inline-flex; flex-direction: column; align-items: center; gap: 0.6rem; margin: 0.6rem auto 0; }
+.lobby-open-msg { margin: 0; color: #8be8a8; font-size: 0.95rem; font-weight: 500; }
+.enter-btn { font-weight: 600; padding: 0.7rem 1.4rem; }
 
 .invite { display: grid; gap: 0.4rem; }
 .lbl { display: inline-block; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: #9fb0d8; margin-bottom: 0.1rem; }
