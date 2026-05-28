@@ -166,10 +166,24 @@ export function assignRolesAlgorithm(
   const criticWeight = options.criticWeight ?? 0.25;
   const solver = options.solver ?? 'hungarian'; // exact optimum; greedy kept for comparison
 
-  const cost = buildCostMatrix(input, criticWeight);
+  // Sub-shape support: when fewer participants than struts (e.g. 4 humans on a
+  // 12-position octahedron), pad the cost matrix with phantom participants at
+  // a uniform very-high cost. Hungarian still gets the square matrix it needs;
+  // because phantom rows uniformly dominate any real row's cost on any column,
+  // the optimum assignment of REAL rows is identical to the rectangular LSAP
+  // optimum on (real-participants × struts). We then slice out the phantom
+  // entries — the struts they "took" become vacant positions in the result.
+  const realN = input.participants.length;
+  const K = input.shape.struts.length;
+  const realCost = buildCostMatrix(input, criticWeight);
+  const PHANTOM_COST = 1e9; // dominates any plausible real cost (bounded by ~topics*teamSize)
+  const cost: number[][] = realCost.map((row) => row.slice());
+  for (let i = realN; i < K; i++) cost.push(new Array<number>(K).fill(PHANTOM_COST));
+
   const personStrut = solver === 'hungarian' ? solveHungarian(cost) : solveGreedy(cost);
 
   const vertexToTopic = vertexToTopicMap(input);
+  // Slice out phantom rows: only the first realN entries are real participants.
   const assignments: ParticipantAssignment[] = input.participants.map((p, i) =>
     resolveAssignment(input, p.id, personStrut[i], vertexToTopic),
   );

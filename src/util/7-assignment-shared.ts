@@ -129,15 +129,28 @@ export function scoreAssignments(
  * Guardrail: confirm input sizes line up with the chosen shape before either
  * method runs. Throws with an actionable message rather than producing a
  * silently-wrong graph.
+ *
+ * Topics are a fixed property of the shape — those still must match exactly.
+ * Participants/preferences are allowed to be FEWER than shape.participantCount
+ * (vacant-position case: 4 humans on an icosahedron-shaped graph). Methods that
+ * support it handle the vacancies; those that can't should detect and throw
+ * their own clearer message AFTER this gate.
  */
 export function assertInputConsistency(input: RoleAssignmentInput): void {
   const { shape, topics, participants, preferences } = input;
   const problems: string[] = [];
   if (topics.length !== shape.topicCount)
     problems.push(`topics ${topics.length} !== shape.topicCount ${shape.topicCount}`);
-  if (participants.length !== shape.participantCount)
-    problems.push(`participants ${participants.length} !== shape.participantCount ${shape.participantCount}`);
-  if (preferences.length !== shape.participantCount)
-    problems.push(`preferences ${preferences.length} !== shape.participantCount ${shape.participantCount}`);
+  if (participants.length < 1)
+    problems.push(`participants ${participants.length} < 1 (need at least one)`);
+  if (participants.length > shape.participantCount)
+    problems.push(`participants ${participants.length} > shape.participantCount ${shape.participantCount}`);
+  if (preferences.length !== participants.length)
+    problems.push(`preferences ${preferences.length} !== participants ${participants.length}`);
   if (problems.length) throw new Error(`RoleAssignmentInput inconsistent with shape:\n - ${problems.join('\n - ')}`);
+}
+
+/** True when fewer participants than struts — i.e., the resulting graph has vacant positions. */
+export function hasVacancies(input: RoleAssignmentInput): boolean {
+  return input.participants.length < input.shape.participantCount;
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import type { SessionSchedule, ShapeName } from '@/util';
+import type { MeetingSession, SessionSchedule, ShapeName } from '@/util';
+import { getShape } from '@/util';
 import { useSessionStore } from '@/stores/session';
 import { useParticipantsStore } from '@/stores/participants';
 import {
@@ -21,6 +22,26 @@ const tab = ref<'mine' | 'full'>('mine');
 
 const title = (id: string) => props.topicTitle.get(id) ?? id.slice(0, 6);
 const mine = computed(() => props.schedule?.perParticipant.find((p) => p.participantId === props.myId) ?? null);
+
+// ── Vacancy detection (sub-shape: fewer participants than the shape's positions)
+const teamSize = computed<number | null>(() => {
+  const sn = session.session?.locked_shape;
+  if (!sn) return null;
+  try { return getShape(sn).teamSize; } catch { return null; }
+});
+function shortMembers(s: MeetingSession): number {
+  return Math.max(0, (teamSize.value ?? s.attendeeMemberIds.length) - s.attendeeMemberIds.length);
+}
+function shortCritics(s: MeetingSession): number {
+  return Math.max(0, (teamSize.value ?? s.attendeeCriticIds.length) - s.attendeeCriticIds.length);
+}
+function shortLabel(s: MeetingSession): string {
+  const m = shortMembers(s); const c = shortCritics(s);
+  if (m && c) return `short ${m}m · ${c}c`;
+  if (m) return `short ${m}m`;
+  if (c) return `short ${c}c`;
+  return '';
+}
 
 // ── Format swap ─────────────────────────────────────────────────────
 // The session's locked_shape may have changed via lobby trim/pad reconciliation
@@ -127,6 +148,7 @@ async function toggleReady(): Promise<void> {
             <span class="topic">{{ title(s.teamTopicId) }}</span>
             <span class="it">it{{ s.iteration }}</span>
             <span class="cnt">{{ s.attendeeMemberIds.length }}m / {{ s.attendeeCriticIds.length }}c</span>
+            <span v-if="shortLabel(s)" class="short" :title="'This team has vacant positions because fewer participants joined than the chosen shape calls for.'">{{ shortLabel(s) }}</span>
           </div>
         </div>
       </div>
@@ -173,6 +195,7 @@ async function toggleReady(): Promise<void> {
 .role.critic { background: #6a2a4d; }
 .it { opacity: 0.6; font-size: 0.7rem; }
 .cnt { opacity: 0.6; font-size: 0.7rem; }
+.short { font-size: 0.65rem; color: #f5c66c; background: rgba(245, 198, 108, 0.1); border: 1px solid rgba(245, 198, 108, 0.3); border-radius: 6px; padding: 0.05rem 0.35rem; line-height: 1.4; }
 .slotblock { margin-bottom: 0.4rem; }
 .slothd { font-size: 0.72rem; opacity: 0.6; margin: 0.4rem 0 0.2rem; }
 .off { font-size: 0.72rem; opacity: 0.55; margin-top: 0.5rem; }

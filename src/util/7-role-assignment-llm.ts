@@ -19,7 +19,7 @@
  */
 
 import {
-  assertInputConsistency,
+  assertInputConsistency, hasVacancies,
   resolveAssignment,
   scoreAssignments,
   vertexToTopicMap,
@@ -132,6 +132,19 @@ export async function assignRolesLlm(
   options: LlmOptions,
 ): Promise<RoleAssignmentResult> {
   assertInputConsistency(input);
+  // The current LLM prompt + permutation validator assume a full shape (N
+  // participants on N struts). Sub-shape support would need a prompt rewrite
+  // (the model has to be told some positions stay vacant) and a validator
+  // change. Algorithm method already handles sub-shape — surface a clear
+  // error here so the LLM tab shows "method unavailable for undersized
+  // sessions" instead of a generic crash.
+  if (hasVacancies(input)) {
+    throw new Error(
+      `LLM assignment is unavailable when the shape has vacancies (`
+      + `${input.participants.length} participants on ${input.shape.participantCount} positions). `
+      + `Switch to the algorithm method.`,
+    );
+  }
 
   const prompt = buildAssignmentPrompt(input);
   const text = await options.complete(prompt, SYSTEM_PROMPT);

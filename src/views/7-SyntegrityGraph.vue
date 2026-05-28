@@ -151,6 +151,48 @@ const joinLabel = computed(() => {
   return `Join your ${ordinal(slot + 1)} session — "${myCurrentTopicTitle.value}" (as ${item.role})`;
 });
 
+// ── Vacancy surfacing ──────────────────────────────────────────────────────
+// True team size from the locked shape (e.g. octahedron teamSize=4 — meaning
+// 4 members + 4 critics per team meeting).
+const teamSize = computed<number | null>(() => {
+  const sn = shapeName.value;
+  if (!sn) return null;
+  try { return getShape(sn).teamSize; } catch { return null; }
+});
+
+/** Live MeetingSession for THIS participant's slot, for vacancy lookups. */
+const myCurrentMeeting = computed(() => {
+  const sched = activeSchedule.value;
+  const slot = currentSlotIndex.value;
+  const item = myCurrentItem.value;
+  if (!sched || slot == null || !item) return null;
+  return sched.slots[slot]?.sessions.find((s) => s.teamTopicId === item.teamTopicId) ?? null;
+});
+
+/** Short-label for the CTA subtitle: "Short 1 member" / "Short 2 critics" / both. */
+const myTeamShortNote = computed<string | null>(() => {
+  const m = myCurrentMeeting.value;
+  const ts = teamSize.value;
+  if (!m || !ts) return null;
+  const shortM = Math.max(0, ts - m.attendeeMemberIds.length);
+  const shortC = Math.max(0, ts - m.attendeeCriticIds.length);
+  if (!shortM && !shortC) return null;
+  const parts: string[] = [];
+  if (shortM) parts.push(`${shortM} member${shortM === 1 ? '' : 's'}`);
+  if (shortC) parts.push(`${shortC} critic${shortC === 1 ? '' : 's'}`);
+  return `Short ${parts.join(' · ')} (vacant slot)`;
+});
+
+/** Overall: how many of the shape's positions are vacant across the whole graph. */
+const totalPositions = computed(() => {
+  const sn = shapeName.value;
+  if (!sn) return 0;
+  try { return getShape(sn).participantCount; } catch { return 0; }
+});
+const filledPositions = computed(() => participants.active.length);
+const vacantPositions = computed(() => Math.max(0, totalPositions.value - filledPositions.value));
+const undersized = computed(() => totalPositions.value > 0 && vacantPositions.value > 0);
+
 /** Next slot index (after the live one) where this participant has a meeting; null if none. */
 const myNextSlotIndex = computed<number | null>(() => {
   const sched = activeSchedule.value;
@@ -186,6 +228,14 @@ function joinMyRoom(): void {
         {{ formatToast }}
       </div>
     </transition>
+
+    <!-- Persistent banner when fewer participants joined than the chosen shape
+         calls for. Vacancies are valid (algorithm assigns what it can) but the
+         host + participants should know up-front. -->
+    <div v-if="undersized" class="undersized-banner" role="status">
+      Running undersized — {{ vacantPositions }} of {{ totalPositions }} positions vacant.
+      Some team meetings will be short members or critics.
+    </div>
 
 
     <main class="stage">
@@ -231,6 +281,7 @@ function joinMyRoom(): void {
         <template v-else-if="myCurrentItem && myCurrentRoom">
           <button class="join-btn" @click="joinMyRoom">{{ joinLabel }}</button>
           <p class="hint">When Meet asks your name, enter: <strong>{{ myName }} ({{ myCurrentItem.role }})</strong></p>
+          <p v-if="myTeamShortNote" class="hint warn">{{ myTeamShortNote }}</p>
         </template>
         <template v-else-if="myCurrentItem && !myCurrentRoom">
           <p class="ft">Preparing room…</p>
@@ -278,6 +329,14 @@ function joinMyRoom(): void {
 .toast-enter-active, .toast-leave-active { transition: opacity 0.2s, transform 0.2s; }
 .toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(-6px); }
 
+/* Undersized notice — top center, persistent through the whole graph/resolve flow. */
+.undersized-banner {
+  position: absolute; top: 0.7rem; left: 50%; transform: translateX(-50%); z-index: 20;
+  background: rgba(245, 198, 108, 0.1); border: 1px solid rgba(245, 198, 108, 0.35);
+  color: #f5c66c; padding: 0.45rem 0.9rem; border-radius: 10px;
+  font-size: 0.8rem; line-height: 1.4; max-width: 540px; text-align: center;
+}
+
 /* Outcome Resolve bottom-middle join card. Same position as .focus-card so
  * the two never overlap (focus is selection-driven; join only renders during
  * resolve phase — design treats them as alternates rather than stacked). */
@@ -292,6 +351,7 @@ function joinMyRoom(): void {
 .join-card .ft { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.55; margin: 0 0 0.4rem; }
 .join-card .hint { margin: 0.5rem 0 0; font-size: 0.8rem; opacity: 0.7; line-height: 1.4; }
 .join-card .hint strong { color: #cdd6f4; opacity: 1; }
+.join-card .hint.warn { color: #f5c66c; opacity: 1; }
 .join-btn {
   background: linear-gradient(180deg, #4f7cff, #3a5fdc); border: none; color: #fff;
   border-radius: 10px; padding: 0.75rem 1.2rem; cursor: pointer; font: inherit;
