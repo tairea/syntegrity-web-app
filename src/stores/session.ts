@@ -13,16 +13,19 @@ import { computed, ref } from 'vue';
 import { supabase, sessionChannelName } from '@/services/supabase';
 import { subscribeTable, loadTable, type Channel } from './realtime';
 import type {
-  ClusterMessageRow, ClusterRow, MergeRequestRow, ParticipantRow, PreferenceRow,
+  ClusterMessageRow, ClusterRow, MeetRoomRow, MergeRequestRow, ParticipantRow, PreferenceRow,
   RoleAssignmentRow, SessionPhase, SessionRow, StatementRow, TopicCardRow, VoteRow,
 } from '@/services/db-types';
 import { ENCODED_SIZES, reconciliationPlan, participantsToTrim } from '@/util';
+import { getFormat, type SessionFormatId } from '@/util/session-formats';
+import { createMeetRooms, endMeetRooms, fetchMeetTranscripts } from '@/services/meet';
 import { useParticipantsStore } from './participants';
 import { useJostleStore } from './jostle';
 import { useVotingStore } from './voting';
 import { usePreferenceStore } from './preference';
 import { useGraphStore } from './graph';
 import { useBotStore } from './bots';
+import { useMeetRoomsStore } from './meetRooms';
 
 const PID_KEY = (sessionId: string) => `syntegrity:pid:${sessionId}`;
 const randomCode = () => Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -102,6 +105,7 @@ export const useSessionStore = defineStore('session', () => {
     const voting = useVotingStore();
     const preference = usePreferenceStore();
     const graph = useGraphStore();
+    const meetRooms = useMeetRoomsStore();
 
     // One channel per table (multiple postgres_changes bindings on a single
     // channel silently fail — see subscribeTable).
@@ -116,6 +120,7 @@ export const useSessionStore = defineStore('session', () => {
       subscribeTable(sid, 'merge_requests', (p) => voting.applyMerge(p)),
       subscribeTable(sid, 'preferences', (p) => preference.applyChange(p)),
       subscribeTable(sid, 'role_assignments', (p) => { if (p.eventType !== 'DELETE') graph.apply(p.new as RoleAssignmentRow); }),
+      subscribeTable(sid, 'meet_rooms', (p) => meetRooms.applyChange(p)),
     ];
 
     // Main channel carries presence + broadcast only.
@@ -144,6 +149,7 @@ export const useSessionStore = defineStore('session', () => {
     );
     preference.load(await loadTable<PreferenceRow>('preferences', sid));
     graph.load(await loadTable<RoleAssignmentRow>('role_assignments', sid));
+    meetRooms.load(await loadTable<MeetRoomRow>('meet_rooms', sid));
 
     // Subscribe for live updates + presence (fire-and-forget; hydration is done).
     ch.subscribe((status) => {
@@ -244,10 +250,123 @@ export const useSessionStore = defineStore('session', () => {
       } else if (s.phase === 'graph') {
         void graph.compute('algorithm');
         void graph.compute('llm');
+        // Outcome Resolve kickoff: host has chosen a format AND every active
+        // participant has marked resolve-ready. Driver mints slot-0 rooms,
+        // then flips phase + stamps the timer.
+        if (s.session_format_id && participants.allReady('resolve')) {
+          await startResolve(s);
+        }
+      } else if (s.phase === 'resolve') {
+        await advanceResolveIfDue(s);
       }
     } finally {
       ticking = false;
     }
+  }
+
+  /** Read slot duration (minutes) from the chosen format's outcome-resolve stage. */
+  function getSlotMinutes(formatId: string | null): number {
+    if (!formatId) return 15;
+    try {
+      const fmt = getFormat(formatId as SessionFormatId);
+      const stage = fmt.stages.find((st) => st.kind === 'outcome-resolve');
+      // Narrow via kind discriminator; both fields live on OutcomeResolveStage.
+      if (stage && stage.kind === 'outcome-resolve') return stage.slotMinutes;
+    } catch { /* fall through to default */ }
+    return 15;
+  }
+
+  /** graph → resolve transition. Idempotent: re-entry is guarded by eq('phase','graph'). */
+  async function startResolve(s: SessionRow): Promise<void> {
+    // 1. Mint rooms for slot 0 (idempotent server-side: returns existing rooms
+    //    if any already exist for that slot). Do this BEFORE flipping phase so
+    //    non-driver clients don't briefly see resolve-phase with no rooms.
+    try {
+      await createMeetRooms(s.id, 0);
+    } catch (e) {
+      console.error('[resolve] meet-create-rooms slot 0 failed:', (e as Error).message);
+      return; // don't flip phase if room creation failed — try again next tick
+    }
+    // 2. Flip phase + stamp slot timer. Conditional on phase=graph so a race
+    //    can't double-advance.
+    await supabase
+      .from('sessions')
+      .update({
+        phase: 'resolve',
+        resolve_current_slot_index: 0,
+        resolve_slot_started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', s.id)
+      .eq('phase', 'graph');
+  }
+
+  /**
+   * Resolve-phase tick: end the current slot's rooms when the timer expires,
+   * then move on to the next slot (or to 'done' if no slots remain). The 5s
+   * visible warning countdown is computed CLIENT-SIDE from resolve_slot_started_at
+   * + format.slotMinutes — the driver only does the actual end-rooms call.
+   */
+  async function advanceResolveIfDue(s: SessionRow): Promise<void> {
+    if (s.resolve_current_slot_index == null || !s.resolve_slot_started_at) return;
+    const slotMinutes = getSlotMinutes(s.session_format_id);
+    const slotEndsAt = new Date(s.resolve_slot_started_at).getTime() + slotMinutes * 60_000;
+    if (Date.now() < slotEndsAt) return; // not yet due
+
+    const currentIdx = s.resolve_current_slot_index;
+
+    // 1. End rooms for current slot (idempotent server-side).
+    try {
+      await endMeetRooms(s.id, currentIdx);
+    } catch (e) {
+      console.error('[resolve] meet-end-rooms failed:', (e as Error).message);
+      // Don't return — still try to advance. Transcripts may still arrive.
+    }
+
+    // 2. Fire-and-forget transcript fetch (may not be ready yet; the function
+    //    returns notReady in that case and we can re-poll later if we want).
+    void fetchMeetTranscripts({ sessionId: s.id, slotIndex: currentIdx }).catch((e) => {
+      console.warn('[resolve] meet-fetch-transcript failed (will retry on next tick):', (e as Error).message);
+    });
+
+    // 3. Figure out the next slot from the schedule.
+    const graph = useGraphStore();
+    const schedule = graph.activeSchedule;
+    const totalSlots = schedule?.slots.length ?? 0;
+    const nextIdx = currentIdx + 1;
+
+    if (!schedule || nextIdx >= totalSlots) {
+      // All slots done. Clear timer state + close session.
+      await supabase
+        .from('sessions')
+        .update({
+          phase: 'done',
+          resolve_current_slot_index: null,
+          resolve_slot_started_at: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', s.id)
+        .eq('phase', 'resolve');
+      return;
+    }
+
+    // 4. Create next-slot rooms BEFORE updating the index, so non-driver clients
+    //    don't see a slot pointer with no rooms.
+    try {
+      await createMeetRooms(s.id, nextIdx);
+    } catch (e) {
+      console.error(`[resolve] meet-create-rooms slot ${nextIdx} failed:`, (e as Error).message);
+      return; // retry next tick — leave index pointing at the old slot
+    }
+    await supabase
+      .from('sessions')
+      .update({
+        resolve_current_slot_index: nextIdx,
+        resolve_slot_started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', s.id)
+      .eq('phase', 'resolve');
   }
 
   async function lockRoster(): Promise<void> {

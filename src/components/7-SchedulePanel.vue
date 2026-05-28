@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue';
 import type { SessionSchedule, ShapeName } from '@/util';
 import { useSessionStore } from '@/stores/session';
+import { useParticipantsStore } from '@/stores/participants';
 import {
   getFormat, listFormatsForShape, type SessionFormatId,
 } from '@/util/session-formats';
@@ -13,6 +14,7 @@ const props = defineProps<{
 }>();
 
 const session = useSessionStore();
+const participants = useParticipantsStore();
 
 const open = ref(true);
 const tab = ref<'mine' | 'full'>('mine');
@@ -51,6 +53,32 @@ async function onFormatChange(e: Event): Promise<void> {
     swapError.value = (err as Error).message;
   } finally {
     swapBusy.value = false;
+  }
+}
+
+// ── Ready to Begin (gates the graph → resolve transition) ───────────────────
+// Visible once the host has picked a format. Everyone clicks Ready to Begin;
+// when allReady('resolve'), the driver tick mints slot-0 Meet rooms and flips
+// phase to 'resolve'. After that, the button locks into an informational
+// "session in progress" state.
+const phase = computed(() => session.session?.phase ?? null);
+const resolveStarted = computed(() => phase.value === 'resolve' || phase.value === 'done');
+const showReadyPanel = computed(() => !!currentFormatId.value && (phase.value === 'graph' || resolveStarted.value));
+const myReady = computed(() => {
+  if (!props.myId) return false;
+  return !!participants.byId(props.myId)?.ready_flags?.resolve;
+});
+const readyCount = computed(() => participants.readyCount('resolve'));
+const totalActive = computed(() => participants.active.length);
+const readyBusy = ref(false);
+
+async function toggleReady(): Promise<void> {
+  if (!props.myId || resolveStarted.value) return;
+  readyBusy.value = true;
+  try {
+    await participants.setReady(props.myId, 'resolve', !myReady.value);
+  } finally {
+    readyBusy.value = false;
   }
 }
 </script>
@@ -103,6 +131,22 @@ async function onFormatChange(e: Event): Promise<void> {
         </div>
       </div>
       </template>
+
+      <!-- Ready to Begin: gates the graph → resolve transition. Renders once
+           the host has picked a format; locks once resolve has started. -->
+      <section v-if="showReadyPanel" class="ready">
+        <p class="ready-count">{{ readyCount }} of {{ totalActive }} ready</p>
+        <button
+          v-if="!resolveStarted"
+          class="ready-btn"
+          :class="{ on: myReady }"
+          :disabled="readyBusy || !myId"
+          @click="toggleReady"
+        >
+          {{ myReady ? '✓ You\'re ready — click to undo' : 'Ready to Begin' }}
+        </button>
+        <p v-else class="ready-in-progress">Session in progress…</p>
+      </section>
     </div>
   </aside>
 </template>
@@ -141,4 +185,13 @@ async function onFormatChange(e: Event): Promise<void> {
 .fmt-warn { margin: 0; font-size: 0.78rem; color: #f5c66c; background: rgba(245, 198, 108, 0.08); border: 1px solid rgba(245, 198, 108, 0.3); border-radius: 8px; padding: 0.4rem 0.55rem; line-height: 1.35; }
 .fmt-warn strong { text-transform: capitalize; color: #ffe2a8; }
 .fmt-err { margin: 0; font-size: 0.75rem; color: #e06c75; }
+
+/* Ready to Begin block — pinned to the bottom of the sidebar's natural flow */
+.ready { margin-top: 0.9rem; padding-top: 0.7rem; border-top: 1px solid #232b44; display: grid; gap: 0.45rem; }
+.ready-count { margin: 0; font-size: 0.72rem; opacity: 0.65; text-transform: uppercase; letter-spacing: 0.05em; }
+.ready-btn { background: linear-gradient(180deg, #4f7cff, #3a5fdc); border: none; color: #fff; border-radius: 10px; padding: 0.6rem 0.8rem; cursor: pointer; font: inherit; font-weight: 600; font-size: 0.88rem; box-shadow: 0 4px 14px rgba(79, 124, 255, 0.25); transition: transform 0.08s, box-shadow 0.15s, background 0.15s; }
+.ready-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(79, 124, 255, 0.35); }
+.ready-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.ready-btn.on { background: linear-gradient(180deg, #2c8a4e, #1e6a3a); box-shadow: 0 4px 14px rgba(44, 138, 78, 0.3); }
+.ready-in-progress { margin: 0; font-size: 0.82rem; color: #9fb0d8; text-align: center; font-style: italic; padding: 0.4rem; }
 </style>
