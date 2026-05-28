@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia';
 import { useSessionStore } from '@/stores/session';
 import { useParticipantsStore } from '@/stores/participants';
 import { useBotStore } from '@/stores/bots';
+import { supabase } from '@/services/supabase';
 import { encodedShapeForHeadcount, getShape, SHAPE_META, MAX_PARTICIPANTS, type ShapeName } from '@/util';
 import PolyhedronScene, { type SceneNode } from '@/components/PolyhedronScene.vue';
 import ParticipantAvatar from '@/components/ParticipantAvatar.vue';
@@ -84,6 +85,38 @@ function removeBot(id: string) {
   bots.removeBot(id);
 }
 
+/**
+ * Show the no-show remove X on cards where it actually makes sense:
+ *  - not me, not a bot (bots have their own X)
+ *  - currently offline (Realtime presence says they're not connected)
+ * The participant must also be a ghost (presence-detection has had a chance
+ * to register them as online — we don't show the X on freshly-joined people
+ * who haven't been observed yet).
+ */
+function canKick(p: ParticipantRow): boolean {
+  return !p.is_bot && p.id !== myParticipantId.value && !isOnline(p.id);
+}
+
+/**
+ * Remove a committed-but-not-here ghost from the session.
+ *
+ * Two steps so they can rejoin via their original invite link later:
+ *   1. Soft-remove the participants row (removed=true). active list updates
+ *      via realtime; headcount and shape derive from the new total.
+ *   2. Null out scheduled_commitments.participant_id where it pointed at the
+ *      removed row. Without this, the next visit would land on RemovedScreen
+ *      (SessionShell reads myParticipantId → fetches the row → removed=true
+ *      → renders RemovedScreen). Clearing the pointer routes them through
+ *      the normal /profile create-fresh-participant path instead.
+ */
+async function removeNoShow(p: ParticipantRow): Promise<void> {
+  if (!canKick(p)) return;
+  const who = p.name?.trim() || 'this participant';
+  if (!confirm(`Remove ${who} from the session?\n\nThey haven't connected. If they show up later via their invite link, they'll be able to rejoin.`)) return;
+  await participants.markRemoved([p.id]);
+  await supabase.from('scheduled_commitments').update({ participant_id: null }).eq('participant_id', p.id);
+}
+
 </script>
 
 <template>
@@ -111,6 +144,7 @@ function removeBot(id: string) {
         <ParticipantAvatar :id="p.id" :name="p.name" :avatar-url="p.avatar_url" :is-bot="p.is_bot" :size="34" />
         <span class="cn">{{ p.name || 'Anon' }}</span>
         <button v-if="p.is_bot" class="card-x" title="Remove bot" @click.stop="removeBot(p.id)">✕</button>
+        <button v-else-if="canKick(p)" class="card-x" title="Remove no-show (they can rejoin via their invite link)" @click.stop="removeNoShow(p)">✕</button>
       </div>
     </aside>
 
@@ -135,6 +169,7 @@ function removeBot(id: string) {
         <ParticipantAvatar :id="p.id" :name="p.name" :avatar-url="p.avatar_url" :is-bot="p.is_bot" :size="34" />
         <span class="cn">{{ p.name || 'Anon' }}</span>
         <button v-if="p.is_bot" class="card-x" title="Remove bot" @click.stop="removeBot(p.id)">✕</button>
+        <button v-else-if="canKick(p)" class="card-x" title="Remove no-show (they can rejoin via their invite link)" @click.stop="removeNoShow(p)">✕</button>
       </div>
     </aside>
 
@@ -152,7 +187,8 @@ function removeBot(id: string) {
               :title="isOnline(p.id) ? 'Connected' : 'Committed but not yet here'"
             />
             <ParticipantAvatar :id="p.id" :name="p.name" :avatar-url="p.avatar_url" :is-bot="p.is_bot" :size="30" />
-            {{ p.name || 'Anon' }}
+            <span class="li-name">{{ p.name || 'Anon' }}</span>
+            <button v-if="canKick(p)" class="li-x" title="Remove no-show (they can rejoin via their invite link)" @click="removeNoShow(p)">✕</button>
           </li>
         </ul>
         <button class="ghost" @click="showRoster = false">Close</button>
@@ -245,6 +281,10 @@ function removeBot(id: string) {
 .modal-inner li { display: flex; align-items: center; gap: 0.5rem; }
 .modal-inner li.offline { opacity: 0.55; }
 .modal-inner li.offline { font-style: italic; }
+.modal-inner li .li-name { flex: 1; }
+/* Mobile roster remove — always visible on touch; subtle on desktop too. */
+.modal-inner li .li-x { background: transparent; border: 1px solid #6c2a30; color: #e06c75; border-radius: 6px; padding: 0.1rem 0.4rem; cursor: pointer; font-size: 0.7rem; line-height: 1; opacity: 0.85; }
+.modal-inner li .li-x:hover { background: rgba(224, 108, 117, 0.12); opacity: 1; }
 .ghost { background: transparent; border: 1px solid #2a3350; color: #cdd6f4; border-radius: 10px; padding: 0.5rem 1rem; cursor: pointer; }
 .modal-inner.edit { border: 1px solid #232b44; }
 .edit-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
