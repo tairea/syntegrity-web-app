@@ -244,7 +244,16 @@ export const useScheduleStore = defineStore('schedule', () => {
         .is('participant_id', null);
     }
 
-    await supabase.from('sessions').update({ status: 'live' }).eq('id', sessionId).eq('status', 'scheduled');
+    // Unlock the roster on promote so the existing live-lobby reconciliation
+    // flow (lockRoster + trim/pad vote at >50% jostle-ready) can adapt the
+    // shape to actual headcount. Scheduled sessions create the row with
+    // roster_locked=true to keep the pre-lobby invite page in a steady state;
+    // once we go live, the lobby owns roster state.
+    await supabase
+      .from('sessions')
+      .update({ status: 'live', roster_locked: false })
+      .eq('id', sessionId)
+      .eq('status', 'scheduled');
   }
 
   /**

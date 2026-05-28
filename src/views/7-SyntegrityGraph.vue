@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useSessionStore } from '@/stores/session';
 import { useParticipantsStore } from '@/stores/participants';
 import { useGraphStore } from '@/stores/graph';
 import { getShape, type AssignmentMethod } from '@/util';
+import { getFormat, type SessionFormatId } from '@/util/session-formats';
 import PolyhedronScene, { type SceneNode, type FocusTarget } from '@/components/PolyhedronScene.vue';
 import MethodToggle from '@/components/7-MethodToggle.vue';
 import SchedulePanel from '@/components/7-SchedulePanel.vue';
@@ -52,11 +53,38 @@ const focusLabel = computed(() => {
   if (f.type === 'topic') return vertexLabels.value[Number(f.id)] ?? `Topic ${Number(f.id) + 1}`;
   return participants.byId(f.id)?.name ?? 'Participant';
 });
+
+// ── Format-change toast ────────────────────────────────────────────────
+// Fires when session_format_id transitions to a different non-null value.
+// Both the host who initiated the swap and every other connected client see
+// the toast (the host via the optimistic local set in updateSessionFormat,
+// others via the existing realtime subscription on the sessions row).
+const formatToast = ref<string | null>(null);
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+watch(
+  () => session.session?.session_format_id ?? null,
+  (next, prev) => {
+    if (!next || !prev || next === prev) return;
+    let name = next;
+    try { name = getFormat(next as SessionFormatId).name; } catch { /* fall back to id */ }
+    formatToast.value = `Session format changed to ${name}`;
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { formatToast.value = null; }, 4000);
+  },
+);
+onUnmounted(() => { if (toastTimer) clearTimeout(toastTimer); });
 </script>
 
 <template>
   <div class="graph">
     <SchedulePanel :schedule="activeSchedule ?? null" :my-id="myParticipantId" :topic-title="topicTitleMap" />
+
+    <transition name="toast">
+      <div v-if="formatToast" class="format-toast" role="status" aria-live="polite">
+        {{ formatToast }}
+      </div>
+    </transition>
+
 
     <main class="stage">
       <div class="topbar">
@@ -111,4 +139,15 @@ const focusLabel = computed(() => {
 .row button { display: inline-flex; align-items: center; gap: 0.35rem; background: #4f7cff; border: none; color: #fff; border-radius: 8px; padding: 0.4rem 0.8rem; cursor: pointer; font: inherit; }
 .row button img { display: block; }
 .row .ghost { background: transparent; border: 1px solid #2a3350; color: #cdd6f4; }
+
+/* Floating toast for realtime format swaps */
+.format-toast {
+  position: absolute; top: 1rem; right: 1rem; z-index: 30;
+  background: #11141f; border: 1px solid #4f7cff;
+  color: #e6ecff; padding: 0.55rem 0.9rem; border-radius: 10px;
+  font-size: 0.85rem; box-shadow: 0 8px 24px rgba(0,0,0,0.45), 0 0 0 1px rgba(79,124,255,0.25);
+  max-width: 320px;
+}
+.toast-enter-active, .toast-leave-active { transition: opacity 0.2s, transform 0.2s; }
+.toast-enter-from, .toast-leave-to { opacity: 0; transform: translateY(-6px); }
 </style>

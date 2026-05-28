@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import type { SessionSchedule } from '@/util';
+import type { SessionSchedule, ShapeName } from '@/util';
+import { useSessionStore } from '@/stores/session';
+import {
+  getFormat, listFormatsForShape, type SessionFormatId,
+} from '@/util/session-formats';
 
 const props = defineProps<{
   schedule: SessionSchedule | null;
@@ -8,17 +12,69 @@ const props = defineProps<{
   topicTitle: Map<string, string>;
 }>();
 
+const session = useSessionStore();
+
 const open = ref(true);
 const tab = ref<'mine' | 'full'>('mine');
 
 const title = (id: string) => props.topicTitle.get(id) ?? id.slice(0, 6);
 const mine = computed(() => props.schedule?.perParticipant.find((p) => p.participantId === props.myId) ?? null);
+
+// ── Format swap ─────────────────────────────────────────────────────
+// The session's locked_shape may have changed via lobby trim/pad reconciliation
+// after the host picked the format at schedule time. If the current format's
+// shape no longer matches, surface a picker so the host can swap to a
+// compatible format. We always render the dropdown (useful even when matched),
+// but show a banner only on mismatch.
+const lockedShape = computed<ShapeName | null>(() => session.session?.locked_shape ?? null);
+const currentFormatId = computed<string | null>(() => session.session?.session_format_id ?? null);
+const currentFormat = computed(() => {
+  const id = currentFormatId.value;
+  if (!id) return null;
+  try { return getFormat(id as SessionFormatId); } catch { return null; }
+});
+const shapeMismatch = computed(() =>
+  !!currentFormat.value && !!lockedShape.value && currentFormat.value.shape !== lockedShape.value,
+);
+const formatOptions = computed(() => (lockedShape.value ? listFormatsForShape(lockedShape.value) : []));
+
+const swapBusy = ref(false);
+const swapError = ref('');
+
+async function onFormatChange(e: Event): Promise<void> {
+  const id = (e.target as HTMLSelectElement).value;
+  if (!id || id === currentFormatId.value) return;
+  swapBusy.value = true; swapError.value = '';
+  try {
+    await session.updateSessionFormat(id);
+  } catch (err) {
+    swapError.value = (err as Error).message;
+  } finally {
+    swapBusy.value = false;
+  }
+}
 </script>
 
 <template>
   <aside class="sched" :class="{ collapsed: !open }">
     <button class="toggle" @click="open = !open">{{ open ? '◀ Schedule' : '▶' }}</button>
-    <div v-if="open && schedule" class="content">
+    <div v-if="open" class="content">
+      <!-- Format swap: visible to everyone; banner surfaces when the live shape
+           no longer matches the originally chosen format. Always rendered when
+           the panel is open so the host can pick before the schedule computes. -->
+      <section v-if="lockedShape && formatOptions.length" class="fmt-swap">
+        <p v-if="shapeMismatch" class="fmt-warn">
+          Shape changed to <strong>{{ lockedShape }}</strong> — pick a matching format.
+        </p>
+        <label class="fmt-lbl">Session format</label>
+        <select :value="currentFormatId ?? ''" :disabled="swapBusy" @change="onFormatChange">
+          <option v-if="!currentFormatId" value="" disabled>Choose a format…</option>
+          <option v-for="f in formatOptions" :key="f.id" :value="f.id">{{ f.name }}</option>
+        </select>
+        <p v-if="swapError" class="fmt-err">{{ swapError }}</p>
+      </section>
+
+      <template v-if="schedule">
       <div class="tabs">
         <button :class="{ on: tab === 'mine' }" @click="tab = 'mine'">My schedule</button>
         <button :class="{ on: tab === 'full' }" @click="tab = 'full'">Full schedule</button>
@@ -46,6 +102,7 @@ const mine = computed(() => props.schedule?.perParticipant.find((p) => p.partici
           </div>
         </div>
       </div>
+      </template>
     </div>
   </aside>
 </template>
@@ -75,4 +132,13 @@ const mine = computed(() => props.schedule?.perParticipant.find((p) => p.partici
 .slotblock { margin-bottom: 0.4rem; }
 .slothd { font-size: 0.72rem; opacity: 0.6; margin: 0.4rem 0 0.2rem; }
 .off { font-size: 0.72rem; opacity: 0.55; margin-top: 0.5rem; }
+
+/* Format swap section */
+.fmt-swap { display: grid; gap: 0.35rem; margin-bottom: 0.6rem; padding-bottom: 0.6rem; border-bottom: 1px solid #232b44; }
+.fmt-lbl { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: #9fb0d8; margin: 0; }
+.fmt-swap select { background: #0c0f18; border: 1px solid #2a3350; color: #e6ecff; border-radius: 8px; padding: 0.4rem 0.5rem; font: inherit; font-size: 0.82rem; width: 100%; }
+.fmt-swap select:disabled { opacity: 0.5; }
+.fmt-warn { margin: 0; font-size: 0.78rem; color: #f5c66c; background: rgba(245, 198, 108, 0.08); border: 1px solid rgba(245, 198, 108, 0.3); border-radius: 8px; padding: 0.4rem 0.55rem; line-height: 1.35; }
+.fmt-warn strong { text-transform: capitalize; color: #ffe2a8; }
+.fmt-err { margin: 0; font-size: 0.75rem; color: #e06c75; }
 </style>

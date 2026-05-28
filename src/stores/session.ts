@@ -314,10 +314,27 @@ export const useSessionStore = defineStore('session', () => {
     await supabase.from('merge_requests').update({ status: 'approved' }).eq('id', m.id);
   }
 
+  /**
+   * Swap the session's format. Used at the graph-reveal step when reconciliation
+   * has changed `locked_shape` and the original format no longer matches — the
+   * host picks a compatible format from the sidebar dropdown.
+   */
+  async function updateSessionFormat(formatId: string): Promise<void> {
+    if (!sessionId.value) return;
+    const { data, error } = await supabase
+      .from('sessions')
+      .update({ session_format_id: formatId })
+      .eq('id', sessionId.value)
+      .select()
+      .single();
+    if (error) throw new Error(error.message);
+    if (data) session.value = data as SessionRow;
+  }
+
   return {
     session, myParticipantId, channel, countdown, sessionId, phase, drivingQuestion, isCreator,
     driverId, isDriver,
     ensureIdentity, createSession, resolveCode, connect, disconnect,
-    setPhase, startCountdown, enterJostle,
+    setPhase, startCountdown, enterJostle, updateSessionFormat,
   };
 });

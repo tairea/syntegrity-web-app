@@ -106,7 +106,7 @@ function copyLink() {
             <Transition name="fade"><span v-if="copied" class="copied">Copied!</span></Transition>
           </div>
         </div>
-        <button class="primary" @click="goToProfile">Continue to your profile →</button>
+        <button class="primary continue" @click="goToProfile">Continue to your profile →</button>
       </div>
     </div>
   </main>
