@@ -20,6 +20,7 @@ export type SessionPhase =
   | 'voting'
   | 'preference'
   | 'graph'
+  | 'resolve'
   | 'done';
 
 export type SessionStatus = 'live' | 'scheduled' | 'done';
@@ -29,6 +30,8 @@ export interface ReadyFlags {
   jostle?: boolean;
   vote?: boolean;
   pref?: boolean;
+  /** Set when a participant clicks "Ready to Begin" on the schedule sidebar; gates the graph→resolve transition. */
+  resolve?: boolean;
   /** Per-phase markers so the bot driver's actions stay idempotent. */
   bot_acted?: Partial<Record<SessionPhase, boolean>>;
 }
@@ -49,6 +52,10 @@ export interface SessionRow {
   session_format_id: string | null;
   scheduled_duration_minutes: number | null;
   creator_token: string | null;
+  /** Outcome Resolve: which slot of the schedule is currently live (0..N), or null pre-/post-resolve. */
+  resolve_current_slot_index: number | null;
+  /** ISO timestamp for the current slot's start; driver uses this + the format's minutesPerIteration to auto-end. */
+  resolve_slot_started_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -158,6 +165,44 @@ export interface RoleAssignmentRow {
   method: 'algorithm' | 'llm';
   result: unknown; // RoleAssignmentResult
   schedule: unknown; // SessionSchedule
+  created_at: string;
+}
+
+export interface MeetRoomRow {
+  id: string;
+  session_id: string;
+  slot_index: number;
+  team_topic_id: string;
+  iteration: number;
+  /** Meet API resource name, e.g. "spaces/abc123...". */
+  space_name: string;
+  /** Join URL (https://meet.google.com/...). */
+  meet_uri: string;
+  /** "conferenceRecords/..." resource name; backfilled when the room ends and Meet creates a record. */
+  conference_name: string | null;
+  created_at: string;
+  ended_at: string | null;
+  transcript_drive_file_id: string | null;
+  transcript_fetched_at: string | null;
+}
+
+/** Speaker label on a captured transcript line. role mirrors SessionRole. */
+export interface TranscriptParticipantLabel {
+  participantId: string;
+  name: string;
+  role: 'member' | 'critic';
+}
+
+export interface SessionTranscriptRow {
+  id: string;
+  session_id: string;
+  slot_index: number;
+  team_topic_id: string;
+  topic_title: string;
+  iteration: number;
+  meet_room_id: string;
+  transcript_text: string;
+  participants: TranscriptParticipantLabel[];
   created_at: string;
 }
 

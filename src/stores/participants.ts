@@ -11,7 +11,7 @@ import type { ParticipantRow, ReadyFlags, SessionPhase } from '@/services/db-typ
 import { participantRowToDomain } from '@/services/db-types';
 import type { Participant } from '@/util';
 
-type ReadyPhase = 'jostle' | 'vote' | 'pref';
+type ReadyPhase = 'jostle' | 'vote' | 'pref' | 'resolve';
 
 export const useParticipantsStore = defineStore('participants', () => {
   const rows = ref<Map<string, ParticipantRow>>(new Map());
@@ -25,7 +25,7 @@ export const useParticipantsStore = defineStore('participants', () => {
   const headcount = computed(() => active.value.length);
   const asDomain = computed<Participant[]>(() => active.value.map(participantRowToDomain));
 
-  const readyKey: Record<ReadyPhase, keyof ReadyFlags> = { jostle: 'jostle', vote: 'vote', pref: 'pref' };
+  const readyKey: Record<ReadyPhase, keyof ReadyFlags> = { jostle: 'jostle', vote: 'vote', pref: 'pref', resolve: 'resolve' };
 
   function readyCount(phase: ReadyPhase): number {
     return active.value.filter((p) => p.ready_flags?.[readyKey[phase]]).length;

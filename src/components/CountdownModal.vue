@@ -11,6 +11,7 @@ const LABELS: Record<SessionPhase, string> = {
   voting: 'Voting',
   preference: 'Topic Preference',
   graph: 'Syntegrity Graph',
+  resolve: 'Outcome Resolve',
   done: 'Close',
 };
 const label = computed(() => (props.to ? LABELS[props.to] : ''));

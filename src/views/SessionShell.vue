@@ -68,6 +68,7 @@ const viewFor: Record<SessionPhase, unknown> = {
   voting: Voting,
   preference: TopicPreference,
   graph: SyntegrityGraph,
+  resolve: SyntegrityGraph,
   done: SyntegrityGraph,
 };
 
