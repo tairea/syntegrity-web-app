@@ -1,0 +1,119 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ComposioHQ/agent-orchestrator/main/schema/config.schema.json
+#
+# Per-project AO config for syntegrity-web-app.
+# Global config lives at ~/.config/agent-orchestrator/config.yaml.
+
+runtime: tmux
+agent: claude-code
+workspace: worktree
+
+agentConfig:
+  # Sonnet handles volume cleanly (hardening tickets, tests, docs).
+  # Bump to claude-opus-4-7 for architecture-shaped tickets.
+  model: claude-sonnet-4-6
+  # `permissionless` = agent acts without per-tool prompts. Required for
+  # overnight runs. Reverse with `default` if a session goes off-rails.
+  permissions: permissionless
+
+tracker:
+  plugin: github
+
+scm:
+  plugin: github
+
+# Symlinked into every worktree so agents don't reinstall / re-pull env.
+# .vercel carries the project link; without it `vercel build` reconfigures.
+symlinks:
+  - .env
+  - node_modules
+  - .vercel
+
+# AO's built-in reactions: when GitHub Actions fails on a PR, re-spawn the
+# agent with the failure logs. When a reviewer requests changes, spawn the
+# agent with the review thread. Capped retries so a broken ticket can't loop.
+# `approved-and-green` stays manual — Ian decides what merges.
+reactions:
+  ci-failed:
+    auto: true
+    action: send-to-agent
+    retries: 2
+  changes-requested:
+    auto: true
+    action: send-to-agent
+    escalateAfter: 30m
+  approved-and-green:
+    auto: false
+    action: notify
+
+orchestratorRules: |
+  You are the orchestrator for syntegrity-web-app — a solo creative-dev's prototype.
+
+  Decomposition:
+  - Prefer small, single-purpose PRs over bundled ones. One issue → one branch → one PR.
+  - Never parallelise edits to the same file across sessions. If two tickets touch the same file, queue them serially.
+  - Hardening / backend tickets parallelise cleanly. UI / vibe-coding work does NOT — flag it back to Ian.
+
+  Branch naming: `ao/<issue-number>-<kebab-slug>`.
+  PR title: conventional commit (`feat:`, `fix:`, `chore:`, etc.) — keep it under 70 chars.
+
+  When to ping Ian (notification):
+  - PR is ready for review
+  - CI failed twice and the agent can't self-heal (escalate)
+  - Two agents conflict on the same file
+  - A ticket needs a product/UX decision (not a tech decision)
+
+  Do NOT ping for: routine progress, individual CI passes, every push.
+
+agentRules: |
+  # syntegrity-web-app — conventions for AO worker agents
+
+  ## Stack
+  - Frontend: Vue 3 (Composition API) + Vite 8 + TS 6 strict + Pinia + vue-router 5
+  - Backend: Supabase (Postgres + Realtime + Edge Functions in Deno)
+  - LLM: OpenRouter, called ONLY via the `openrouter` Supabase Edge Function
+  - Deploy: Vercel (preview-per-branch via .github/workflows/deploy.yml, prod on main)
+
+  ## Hard rules (don't violate, ever)
+  - NEVER call openrouter.ai directly from frontend code. Always go through
+    `supabase.functions.invoke('openrouter', ...)`. The API key lives in
+    Supabase function env and must never reach the browser bundle.
+  - NEVER add a Vite env var (`VITE_*`) that should be secret. Vite inlines
+    every `VITE_*` into the client bundle.
+  - NEVER use `any`. Use `unknown` + type guards, or a real type.
+  - NEVER mock the Supabase client in tests — point at a local Supabase or skip.
+  - Use the singleton from `@/services/supabase`. Don't `createClient` elsewhere.
+  - `supabase/schema.sql` must stay idempotent (`CREATE TABLE IF NOT EXISTS`,
+    `CREATE POLICY ... IF NOT EXISTS`, etc.). It's re-applied wholesale.
+
+  ## File conventions
+  - `src/util/N-thing.ts` — numbered when it's a workflow step (3-roster, 4-clustering, 5-merge, 7-scheduler). Skip the number for non-workflow helpers.
+  - `src/util/index.ts` — barrel re-export, keep in sync when adding files.
+  - `src/util/types.ts` — shared types only.
+  - `src/services/supabase.ts` — singleton; don't create siblings.
+  - `supabase/functions/<name>/index.ts` — one folder per edge function.
+
+  ## Style
+  - JSDoc on exported functions, WHY-not-WHAT, terse. Match the existing
+    voice in `src/util/llm-openrouter.ts` and `src/services/supabase.ts`.
+  - No inline `// what this does` comments. Names should carry the meaning.
+  - Scoped CSS inside `<style scoped>` in SFCs. No Tailwind.
+
+  ## Verification before pushing
+  - Run `npm run build` (this is `vue-tsc -b && vite build` — it typechecks).
+  - There is NO `npm run test` and NO `npm run lint`. Don't invent them.
+  - Don't run the dev server (`npm run dev`) for headless visual testing —
+    Ian explicitly disallows that. Let Vercel preview be the visual smoke.
+  - For edge function changes, `supabase functions serve <name>` locally is
+    fine, then `supabase functions deploy <name> --no-verify-jwt` to push.
+
+  ## Commits & PRs
+  - Conventional commits (`feat:`, `fix:`, `chore:`, `refactor:`, `docs:`).
+  - Commit message body explains WHY, not WHAT.
+  - PR description: one-line summary + bullet list of behavior changes +
+    "How to verify" section + link to the issue.
+
+  ## Out of scope (don't do unless ticket asks)
+  - Adding tests to untested code (no test runner is wired)
+  - Refactors beyond the ticket
+  - Bumping dependencies
+  - Touching `docs/initial-design-spec.md` — that's Ian's spec, read-only.
