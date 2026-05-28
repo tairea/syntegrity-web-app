@@ -16,6 +16,24 @@ const session = useSessionStore();
 const participants = useParticipantsStore();
 const bots = useBotStore();
 const { drivingQuestion, sessionId, myParticipantId } = storeToRefs(session);
+const { online } = storeToRefs(participants);
+
+/**
+ * Is this participant actually in the browser right now?
+ *
+ * For scheduled sessions, promoteToLive pre-creates a participants row for
+ * every committed person whether or not they've opened the link. The
+ * Supabase Realtime presence channel only marks an id "online" once their
+ * tab has connected, so this is the single source of truth for "is this
+ * person actually here vs. a no-show ghost?".
+ *
+ * Bots don't have presence tracks (no browser); they're always considered
+ * present since the driver tick speaks for them. The robot icon in the
+ * avatar already distinguishes them visually.
+ */
+function isOnline(id: string): boolean {
+  return online.value.has(id);
+}
 
 const showRoster = ref(false);
 const showEdit = ref(false);
@@ -36,6 +54,10 @@ const roster = computed(() =>
   [...participants.active].sort((a, b) => a.joined_at.localeCompare(b.joined_at)),
 );
 const headcount = computed(() => roster.value.length);
+
+/** "N of M connected" footer counter (humans only — bots are always here). */
+const humansCount = computed(() => participants.humans.length);
+const humansOnlineCount = computed(() => participants.humans.filter((p) => isOnline(p.id)).length);
 
 /** Smallest encoded shape that fits everyone; rolls up as positions fill (6 → 12 → 30). */
 const shapeName = computed<ShapeName>(() => encodedShapeForHeadcount(headcount.value));
@@ -73,7 +95,19 @@ function removeBot(id: string) {
 
     <!-- desktop side cards -->
     <aside class="cards left">
-      <div v-for="p in leftCards" :key="p.id" class="card" :class="{ me: p.id === myParticipantId }" @click="onCardClick(p)">
+      <div
+        v-for="p in leftCards"
+        :key="p.id"
+        class="card"
+        :class="{ me: p.id === myParticipantId, offline: !p.is_bot && !isOnline(p.id) }"
+        @click="onCardClick(p)"
+      >
+        <span
+          v-if="!p.is_bot"
+          class="dot"
+          :class="{ on: isOnline(p.id) }"
+          :title="isOnline(p.id) ? 'Connected' : 'Committed but not yet here'"
+        />
         <ParticipantAvatar :id="p.id" :name="p.name" :avatar-url="p.avatar_url" :is-bot="p.is_bot" :size="34" />
         <span class="cn">{{ p.name || 'Anon' }}</span>
         <button v-if="p.is_bot" class="card-x" title="Remove bot" @click.stop="removeBot(p.id)">✕</button>
@@ -85,7 +119,19 @@ function removeBot(id: string) {
     </section>
 
     <aside class="cards right">
-      <div v-for="p in rightCards" :key="p.id" class="card" :class="{ me: p.id === myParticipantId }" @click="onCardClick(p)">
+      <div
+        v-for="p in rightCards"
+        :key="p.id"
+        class="card"
+        :class="{ me: p.id === myParticipantId, offline: !p.is_bot && !isOnline(p.id) }"
+        @click="onCardClick(p)"
+      >
+        <span
+          v-if="!p.is_bot"
+          class="dot"
+          :class="{ on: isOnline(p.id) }"
+          :title="isOnline(p.id) ? 'Connected' : 'Committed but not yet here'"
+        />
         <ParticipantAvatar :id="p.id" :name="p.name" :avatar-url="p.avatar_url" :is-bot="p.is_bot" :size="34" />
         <span class="cn">{{ p.name || 'Anon' }}</span>
         <button v-if="p.is_bot" class="card-x" title="Remove bot" @click.stop="removeBot(p.id)">✕</button>
@@ -98,7 +144,13 @@ function removeBot(id: string) {
       <div class="modal-inner">
         <h3>In the lobby ({{ headcount }})</h3>
         <ul>
-          <li v-for="p in roster" :key="p.id">
+          <li v-for="p in roster" :key="p.id" :class="{ offline: !p.is_bot && !isOnline(p.id) }">
+            <span
+              v-if="!p.is_bot"
+              class="dot"
+              :class="{ on: isOnline(p.id) }"
+              :title="isOnline(p.id) ? 'Connected' : 'Committed but not yet here'"
+            />
             <ParticipantAvatar :id="p.id" :name="p.name" :avatar-url="p.avatar_url" :is-bot="p.is_bot" :size="30" />
             {{ p.name || 'Anon' }}
           </li>
@@ -117,6 +169,14 @@ function removeBot(id: string) {
       <div class="foot-side foot-right">
         <strong>{{ headcount }} in lobby</strong>
         <span>{{ botCount }} bot{{ botCount === 1 ? '' : 's' }}</span>
+        <span
+          v-if="humansCount > 0"
+          class="presence"
+          :class="{ partial: humansOnlineCount < humansCount }"
+          :title="humansOnlineCount < humansCount ? 'Some committed humans have not connected yet (greyed cards)' : 'All committed humans are here'"
+        >
+          {{ humansOnlineCount }} of {{ humansCount }} connected
+        </span>
       </div>
     </footer>
 
@@ -154,7 +214,15 @@ function removeBot(id: string) {
    the cards themselves stay interactive. */
 .card { position: relative; flex: none; display: flex; align-items: center; gap: 0.5rem; background: rgba(17,20,31,0.55); backdrop-filter: blur(6px); border: 1px solid rgba(35,43,68,0.7); color: #e6ecff; border-radius: 10px; padding: 0.28rem 0.5rem; font: inherit; text-align: left; pointer-events: auto; }
 .card.me { border-color: #4f7cff; cursor: pointer; }
+/* Committed but not yet here — pre-populated from a scheduled commitment whose
+   browser hasn't connected. Dim the card so it's distinguishable from real
+   attendees at a glance. */
+.card.offline { opacity: 0.5; }
+.card.offline .cn { font-style: italic; }
 .card .cn { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Presence dot. Green = connected via realtime presence; grey = not here yet. */
+.dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #4a5168; box-shadow: 0 0 0 1px rgba(0,0,0,0.25); }
+.dot.on { background: #8be8a8; box-shadow: 0 0 0 1px rgba(0,0,0,0.25), 0 0 4px rgba(139, 232, 168, 0.4); }
 .card-x { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; border: none; background: #e06c75; color: #fff; font-size: 0.6rem; line-height: 1; cursor: pointer; opacity: 0; transition: opacity 0.12s; }
 .card:hover .card-x { opacity: 1; }
 .chip { display: none; position: absolute; top: 1rem; right: 1rem; z-index: 6; background: #11141f; border: 1px solid #2a3350; color: #fff; border-radius: 999px; padding: 0.5rem 0.9rem; cursor: pointer; }
@@ -167,11 +235,16 @@ function removeBot(id: string) {
 .foot-side strong { color: #e6ecff; }
 .foot-side span { opacity: 0.6; }
 .note { opacity: 0.5; }
+/* Connection counter: green when full, amber when some are no-shows. */
+.presence { color: #8be8a8; opacity: 0.9; }
+.presence.partial { color: #f5c66c; opacity: 1; }
 .primary { background: #4f7cff; color: #fff; border: none; border-radius: 12px; padding: 0.8rem 1.6rem; font: inherit; cursor: pointer; pointer-events: auto; }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; z-index: 20; }
 .modal-inner { background: #11141f; padding: 1.2rem; border-radius: 14px; width: min(360px, 90vw); }
 .modal-inner ul { list-style: none; padding: 0; margin: 0 0 1rem; display: grid; gap: 0.4rem; max-height: 50vh; overflow-y: auto; }
 .modal-inner li { display: flex; align-items: center; gap: 0.5rem; }
+.modal-inner li.offline { opacity: 0.55; }
+.modal-inner li.offline { font-style: italic; }
 .ghost { background: transparent; border: 1px solid #2a3350; color: #cdd6f4; border-radius: 10px; padding: 0.5rem 1rem; cursor: pointer; }
 .modal-inner.edit { border: 1px solid #232b44; }
 .edit-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }

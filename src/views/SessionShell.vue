@@ -93,13 +93,20 @@ async function onEnterJostle() {
   enteredJostle.value = true;
   await session.enterJostle();
 }
+function onBackToLobby() {
+  // Local-only toggle: phase stays 'jostle' on the server, but this client
+  // bounces back to the lobby view. Re-entering via the lobby's "Enter
+  // Problem Jostle →" button re-flips the local flag (session.enterJostle()
+  // is a no-op when phase is already jostle).
+  enteredJostle.value = false;
+}
 </script>
 
 <template>
   <div class="shell">
     <div v-if="!hydrated" class="center">Connecting…</div>
     <RemovedScreen v-else-if="removed" :target-positions="reconReason.targetPositions" :removed-count="reconReason.removedCount" />
-    <component v-else :is="currentView" @enter-jostle="onEnterJostle" />
+    <component v-else :is="currentView" @enter-jostle="onEnterJostle" @back-to-lobby="onBackToLobby" />
     <CountdownModal :to="countdown?.to ?? null" :n="countdown?.n ?? 0" />
   </div>
 </template>

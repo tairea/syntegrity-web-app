@@ -19,6 +19,11 @@ const bots = useBotStore();
 const reconciliation = useReconciliationStore();
 const { sessionId, drivingQuestion, myParticipantId } = storeToRefs(session);
 
+// SessionShell owns the per-client lobby↔jostle toggle (enteredJostle); this
+// emit lets the user pop back to the lobby view without affecting session phase
+// (phase stays 'jostle' for everyone — only the local view flips).
+defineEmits<{ (e: 'back-to-lobby'): void }>();
+
 const stage = ref<HTMLDivElement | null>(null);
 const dims = reactive({ w: 1000, h: 700 });
 const draft = ref('');
@@ -324,6 +329,10 @@ const myReconVote = computed<'up' | 'down' | null>(() => {
       />
 
       <div ref="stage" class="stage">
+        <button class="back-btn" title="Back to lobby view (doesn't affect anyone else)" @click="$emit('back-to-lobby')">
+          <span aria-hidden="true">←</span> Lobby
+        </button>
+
         <header class="dq">
           <span class="dq-label">Driving Question</span>
           <p>{{ drivingQuestion }}</p>
@@ -409,6 +418,9 @@ const myReconVote = computed<'up' | 'down' | null>(() => {
 .stage { position: relative; overflow: hidden; }
 
 .dq { position: absolute; top: 0.9rem; left: 50%; transform: translateX(-50%); text-align: center; z-index: 40; pointer-events: none; }
+/* Per-client back affordance — local-only view toggle, doesn't flip session phase. */
+.back-btn { position: absolute; top: 0.9rem; left: 1rem; z-index: 41; background: rgba(17, 20, 31, 0.7); backdrop-filter: blur(6px); border: 1px solid #2a3350; color: #cdd6f4; border-radius: 999px; padding: 0.4rem 0.85rem; cursor: pointer; font: inherit; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 0.35rem; transition: background 0.12s, border-color 0.12s; }
+.back-btn:hover { background: rgba(17, 20, 31, 0.95); border-color: #4f7cff; color: #e6ecff; }
 .dq-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.07em; color: #7aa2ff; }
 .dq p { margin: 0.25rem 0 0; font-size: 1.25rem; font-weight: 600; max-width: 50vw; }
 
