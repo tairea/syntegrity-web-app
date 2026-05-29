@@ -108,11 +108,14 @@ async function toggleReady(): Promise<void> {
   <aside class="sched" :class="{ collapsed: !open }">
     <button class="toggle" @click="open = !open">{{ open ? '◀ Schedule' : '▶' }}</button>
     <div v-if="open" class="content">
-      <!-- Format swap: visible to everyone; banner surfaces when the live shape
-           no longer matches the originally chosen format. Always rendered when
-           the panel is open so the host can pick before the schedule computes. -->
-      <section v-if="lockedShape && formatOptions.length" class="fmt-swap">
-        <p v-if="shapeMismatch" class="fmt-warn">
+      <!-- Mismatch-only fallback: the primary format picker now lives in the
+           lobby (3-LobbyFormatPanel.vue). This sidebar surface only reappears
+           when POST-lobby reconciliation (trim/pad vote) changes the shape
+           after a format was already committed, leaving the chosen format
+           incompatible with the new shape. Same updateSessionFormat action,
+           same banner copy — just no longer the always-visible primary entry. -->
+      <section v-if="shapeMismatch && formatOptions.length" class="fmt-swap">
+        <p class="fmt-warn">
           Shape changed to <strong>{{ lockedShape }}</strong> — pick a matching format.
         </p>
         <label class="fmt-lbl">Session format</label>

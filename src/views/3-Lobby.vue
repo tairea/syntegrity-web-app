@@ -9,6 +9,8 @@ import { encodedShapeForHeadcount, getShape, SHAPE_META, MAX_PARTICIPANTS, type 
 import PolyhedronScene, { type SceneNode } from '@/components/PolyhedronScene.vue';
 import ParticipantAvatar from '@/components/ParticipantAvatar.vue';
 import ProfileForm from '@/components/ProfileForm.vue';
+import LobbyFormatPanel from '@/components/3-LobbyFormatPanel.vue';
+import { getFormat, type SessionFormatId } from '@/util/session-formats';
 import type { ParticipantRow } from '@/services/db-types';
 
 defineEmits<{ (e: 'enter-jostle'): void }>();
@@ -59,6 +61,27 @@ const headcount = computed(() => roster.value.length);
 /** "N of M connected" footer counter (humans only — bots are always here). */
 const humansCount = computed(() => participants.humans.length);
 const humansOnlineCount = computed(() => participants.humans.filter((p) => isOnline(p.id)).length);
+
+// ── Format picker (slide-up drawer from the footer chip) ─────────────────
+const formatPaneOpen = ref(false);
+const currentFormatName = computed<string>(() => {
+  const id = session.session?.session_format_id;
+  if (!id) return 'Choose a format';
+  try { return getFormat(id as SessionFormatId).name; } catch { return 'Choose a format'; }
+});
+/**
+ * The committed format's shape no longer fits the lobby's live shape — e.g.
+ * the host picked a tetra format at schedule time and the lobby has grown to
+ * octa-sized. We decorate the chip with a warning glyph so users notice the
+ * drawer is offering them a swap.
+ */
+const formatShapeMismatch = computed<boolean>(() => {
+  const id = session.session?.session_format_id;
+  if (!id || !shapeName.value) return false;
+  try {
+    return getFormat(id as SessionFormatId).shape !== shapeName.value;
+  } catch { return false; }
+});
 
 /** Smallest encoded shape that fits everyone; rolls up as positions fill (6 → 12 → 30). */
 const shapeName = computed<ShapeName>(() => encodedShapeForHeadcount(headcount.value));
@@ -201,6 +224,16 @@ async function removeNoShow(p: ParticipantRow): Promise<void> {
         <span>{{ meta.participantCount }} positions · {{ meta.topicCount }} topics</span>
         <span class="note">{{ full ? 'Full (30 max)' : 'Grows as people join' }}</span>
       </div>
+      <button
+        class="format-chip"
+        :class="{ warn: formatShapeMismatch }"
+        :title="formatShapeMismatch ? 'The chosen format no longer fits the current shape — click to swap' : 'Choose how this session will run'"
+        @click="formatPaneOpen = true"
+      >
+        <span v-if="formatShapeMismatch" class="format-chip-warn" aria-hidden="true">⚠</span>
+        <span class="format-chip-label">{{ currentFormatName }}</span>
+        <span class="format-chip-caret" aria-hidden="true">▴</span>
+      </button>
       <button class="primary" @click="$emit('enter-jostle')">Enter Problem Jostle →</button>
       <div class="foot-side foot-right">
         <strong>{{ headcount }} in lobby</strong>
@@ -215,6 +248,10 @@ async function removeNoShow(p: ParticipantRow): Promise<void> {
         </span>
       </div>
     </footer>
+
+    <!-- Slide-up format picker pane. Lives at the root so it can overlay the
+         whole lobby (polyhedron, rails, footer) when open. -->
+    <LobbyFormatPanel v-model:open="formatPaneOpen" :shape="shapeName" />
 
     <!-- add a bot participant (fills a vacant position; auto-contributes at every step) -->
     <button class="bot-add" :disabled="addingBot || full" :title="full ? 'Session full (30 max)' : 'Add a bot participant (auto-contributes at each step)'" @click="addBot">
@@ -275,6 +312,25 @@ async function removeNoShow(p: ParticipantRow): Promise<void> {
 .presence { color: #8be8a8; opacity: 0.9; }
 .presence.partial { color: #f5c66c; opacity: 1; }
 .primary { background: #4f7cff; color: #fff; border: none; border-radius: 12px; padding: 0.8rem 1.6rem; font: inherit; cursor: pointer; pointer-events: auto; }
+/* Footer format chip — sits left of the primary Enter Jostle button. Opens
+ * the slide-up format drawer; mirrors the chip pattern (.chip on mobile) but
+ * with a label + caret + optional warn glyph for shape mismatch. */
+.format-chip {
+  pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  background: rgba(17, 20, 31, 0.7); backdrop-filter: blur(6px);
+  border: 1px solid #2a3350; color: #cdd6f4;
+  border-radius: 999px; padding: 0.55rem 0.95rem;
+  font: inherit; font-size: 0.82rem; cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  max-width: 220px;
+}
+.format-chip:hover { background: rgba(17, 20, 31, 0.95); border-color: #4f7cff; color: #e6ecff; }
+.format-chip.warn { border-color: rgba(245, 198, 108, 0.5); color: #f5c66c; }
+.format-chip.warn:hover { background: rgba(245, 198, 108, 0.1); }
+.format-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.format-chip-caret { opacity: 0.65; font-size: 0.7rem; }
+.format-chip-warn { font-size: 0.85rem; }
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: grid; place-items: center; z-index: 20; }
 .modal-inner { background: #11141f; padding: 1.2rem; border-radius: 14px; width: min(360px, 90vw); }
 .modal-inner ul { list-style: none; padding: 0; margin: 0 0 1rem; display: grid; gap: 0.4rem; max-height: 50vh; overflow-y: auto; }
