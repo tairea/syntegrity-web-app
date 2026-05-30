@@ -52,6 +52,9 @@ export interface SessionRow {
   session_format_id: string | null;
   scheduled_duration_minutes: number | null;
   creator_token: string | null;
+  /** Persistent session-level Meet coordination space (lobby → done). */
+  meet_space_name: string | null;
+  meet_space_uri: string | null;
   /** Outcome Resolve: which slot of the schedule is currently live (0..N), or null pre-/post-resolve. */
   resolve_current_slot_index: number | null;
   /** ISO timestamp for the current slot's start; driver uses this + the format's minutesPerIteration to auto-end. */

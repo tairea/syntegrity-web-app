@@ -37,6 +37,7 @@ export const useSessionStore = defineStore('session', () => {
   const countdown = ref<{ to: SessionPhase; n: number } | null>(null);
   let transitioning = false;
   let ticking = false;
+  let sessionSpaceCreating = false;
   let tickTimer: ReturnType<typeof setInterval> | null = null;
   let tableChannels: Channel[] = [];
   /** Merge/reconciliation request ids this client has already resolved (idempotency vs realtime lag). */
@@ -204,6 +205,23 @@ export const useSessionStore = defineStore('session', () => {
     return ENCODED_SIZES.find((e) => e.size === count) ?? null;
   }
 
+  // ── session-level Meet space ──────────────────────────────────────────────
+  /** Create the persistent coordination Meet space for this session.
+   *  Fire-and-forget from driverTick; realtime delivers meet_space_uri back. */
+  async function createSessionSpace(): Promise<void> {
+    if (sessionSpaceCreating || session.value?.meet_space_uri) return;
+    sessionSpaceCreating = true;
+    try {
+      await supabase.functions.invoke('meet-create-session-space', {
+        body: { sessionId: sessionId.value },
+      });
+      // Realtime subscription on 'sessions' delivers the updated row (including
+      // meet_space_uri) back to session.value — no local mutation needed here.
+    } finally {
+      sessionSpaceCreating = false;
+    }
+  }
+
   // ── driver tick ─────────────────────────────────────────────────────────
   async function driverTick(): Promise<void> {
     // Re-entrancy guard: the interval fires every 1.5s but a tick is async and
@@ -213,6 +231,10 @@ export const useSessionStore = defineStore('session', () => {
     if (!isDriver.value || !session.value) return;
     ticking = true;
     try {
+      // Ensure the session-level coordination space exists. Fire-and-forget;
+      // does not block the tick. Realtime delivers the update to session.value.
+      if (!session.value.meet_space_uri && !sessionSpaceCreating) void createSessionSpace();
+
       const s = session.value;
       const participants = useParticipantsStore();
       const voting = useVotingStore();
@@ -454,6 +476,6 @@ export const useSessionStore = defineStore('session', () => {
     session, myParticipantId, channel, countdown, sessionId, phase, drivingQuestion, isCreator,
     driverId, isDriver,
     ensureIdentity, createSession, resolveCode, connect, disconnect,
-    setPhase, startCountdown, enterJostle, updateSessionFormat,
+    setPhase, startCountdown, enterJostle, updateSessionFormat, createSessionSpace,
   };
 });
