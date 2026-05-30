@@ -39,6 +39,10 @@ alter table sessions add column if not exists creator_token uuid;
 -- Outcome Resolve runtime state.
 alter table sessions add column if not exists resolve_current_slot_index int;
 alter table sessions add column if not exists resolve_slot_started_at timestamptz;
+-- Persistent session-level Meet coordination space (lobby → done). Distinct from
+-- meet_rooms.space_name / meet_uri which are per-slot, per-team breakout rooms.
+alter table sessions add column if not exists meet_space_name text;
+alter table sessions add column if not exists meet_space_uri  text;
 
 create table if not exists participants (
   id uuid primary key default gen_random_uuid(),
