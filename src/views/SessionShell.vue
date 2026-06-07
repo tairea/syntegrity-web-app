@@ -8,6 +8,7 @@ import { useVotingStore } from '@/stores/voting';
 import { getShape, isShapeEncoded } from '@/util';
 import type { SessionPhase } from '@/services/db-types';
 import CountdownModal from '@/components/CountdownModal.vue';
+import SessionCallButton from '@/components/SessionCallButton.vue';
 import RemovedScreen from './RemovedScreen.vue';
 import Lobby from './3-Lobby.vue';
 import ProblemJostle from './4-ProblemJostle.vue';
@@ -21,6 +22,8 @@ const route = useRoute();
 const session = useSessionStore();
 const participants = useParticipantsStore();
 const { phase, countdown, myParticipantId } = storeToRefs(session);
+
+const meetSpaceUri = computed(() => session.session?.meet_space_uri ?? null);
 
 const hydrated = ref(false);
 /** Voluntary lobby→jostle: a lobby user only moves once they click Enter. */
@@ -108,6 +111,7 @@ function onBackToLobby() {
     <RemovedScreen v-else-if="removed" :target-positions="reconReason.targetPositions" :removed-count="reconReason.removedCount" />
     <component v-else :is="currentView" @enter-jostle="onEnterJostle" @back-to-lobby="onBackToLobby" />
     <CountdownModal :to="countdown?.to ?? null" :n="countdown?.n ?? 0" />
+    <SessionCallButton v-if="hydrated && !removed" :meet-space-uri="meetSpaceUri" />
   </div>
 </template>
 
