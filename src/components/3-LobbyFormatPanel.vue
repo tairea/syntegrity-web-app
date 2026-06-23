@@ -25,6 +25,7 @@ import { useSessionStore } from '@/stores/session';
 import { getFormat, listFormatsForShape, type SessionFormatId } from '@/util/session-formats';
 import FormatInfo from '@/components/FormatInfo.vue';
 import SessionTimetable from '@/components/SessionTimetable.vue';
+import NewExperimentalFormatDialog from '@/components/NewExperimentalFormatDialog.vue';
 
 const props = defineProps<{
   open: boolean;
@@ -108,6 +109,9 @@ function onBrowseChange(e: Event): void {
   previewFormatId.value = (e.target as HTMLSelectElement).value;
 }
 
+// ── "Create new experimental format" dialog ─────────────────────────────────
+const showNewFormatDialog = ref(false);
+
 function close(): void { emit('update:open', false); }
 
 // Esc to close while open.
@@ -142,7 +146,12 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); });
 
           <!-- Browse dropdown — non-destructive; only previews. -->
           <div v-if="formatOptions.length" class="lfp-browse">
-            <label class="lfp-lbl" for="lfp-browse">Browse formats for {{ shape ?? '…' }}</label>
+            <div class="lfp-browse-head">
+              <label class="lfp-lbl" for="lfp-browse">Browse formats for {{ shape ?? '…' }}</label>
+              <button class="lfp-new-format-btn" type="button" @click="showNewFormatDialog = true">
+                + Create new experimental
+              </button>
+            </div>
             <select
               id="lfp-browse"
               :value="previewFormatId"
@@ -182,6 +191,10 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); });
         </footer>
       </aside>
     </Transition>
+
+    <!-- LLM-assisted "draft a new format" flow. Self-teleports to <body> so it
+         overlays above this (transformed) dialog correctly. -->
+    <NewExperimentalFormatDialog v-model:open="showNewFormatDialog" />
   </Teleport>
 </template>
 
@@ -255,7 +268,15 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); });
 .lfp-warn strong { color: #ffe2a8; text-transform: capitalize; }
 
 .lfp-browse { display: grid; gap: 0.35rem; }
+/* Label + "Create new experimental" action share a row; button pinned right. */
+.lfp-browse-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
 .lfp-lbl { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: #9fb0d8; margin: 0; }
+.lfp-new-format-btn {
+  flex-shrink: 0; background: transparent; border: 1px solid #2a3350; color: #7aa2ff;
+  padding: 0.3rem 0.65rem; border-radius: 8px; font: inherit; font-size: 0.75rem;
+  cursor: pointer; transition: border-color 0.15s, background 0.15s;
+}
+.lfp-new-format-btn:hover { border-color: #4f7cff; background: #131a30; }
 .lfp-browse select {
   background: #0c0f18; border: 1px solid #2a3350; color: #e6ecff;
   border-radius: 8px; padding: 0.5rem 0.6rem; font: inherit; font-size: 0.88rem;
