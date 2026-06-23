@@ -232,7 +232,7 @@ async function removeNoShow(p: ParticipantRow): Promise<void> {
       >
         <span v-if="formatShapeMismatch" class="format-chip-warn" aria-hidden="true">⚠</span>
         <span class="format-chip-label">{{ currentFormatName }}</span>
-        <span class="format-chip-caret" aria-hidden="true">▴</span>
+        <span class="format-chip-caret" aria-hidden="true">⋯</span>
       </button>
       <button class="primary" @click="$emit('enter-jostle')">Enter Problem Jostle →</button>
       <div class="foot-side foot-right">
@@ -346,7 +346,10 @@ async function removeNoShow(p: ParticipantRow): Promise<void> {
 .edit-hd { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
 .edit-hd h3 { margin: 0; }
 .x { background: none; border: none; color: #cdd6f4; font-size: 1.1rem; cursor: pointer; }
-.bot-add { position: absolute; bottom: 1.2rem; right: 1.2rem; z-index: 7; width: 36px; height: 36px; border-radius: 50%; background: transparent; border: 1px solid #8a94b0; cursor: pointer; display: grid; place-items: center; opacity: 0.65; transition: opacity 0.15s; }
+/* Stacked just above the fixed Join Live Call button (SessionCallButton:
+   bottom 1.5rem, right 1.5rem, ~36px tall) so the two no longer overlap. Right
+   edges align; this sits with a small gap above it. */
+.bot-add { position: fixed; bottom: 4.75rem; right: 1.5rem; z-index: 51; width: 36px; height: 36px; border-radius: 50%; background: #11141f; border: 1px solid #8a94b0; cursor: pointer; display: grid; place-items: center; opacity: 0.65; transition: opacity 0.15s; }
 .bot-add:hover { opacity: 1; }
 .bot-add:active { transform: scale(0.94); }
 .bot-add:disabled { opacity: 0.35; cursor: default; }

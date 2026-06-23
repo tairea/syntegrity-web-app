@@ -1,6 +1,8 @@
 <script setup lang="ts">
 /**
- * Lobby format picker — slides up 50vh from the bottom over the polyhedron.
+ * Lobby format picker — a centered full-overlay dialog over the lobby, sized
+ * to fit the format details plus the full example timetable with room to
+ * breathe (the old 50vh slide-up drawer was too cramped for the timetable).
  *
  * Format selection lives in the lobby because format dictates how EVERY
  * downstream step actually behaves (topicsCovered, slotMinutes, criticPolicy,
@@ -122,12 +124,11 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); });
       <div v-if="open" class="lfp-backdrop" @click="close" />
     </Transition>
 
-    <Transition name="slide-up">
-      <aside v-if="open" class="lfp" role="dialog" aria-labelledby="lfp-title" @click.stop>
+    <Transition name="pop">
+      <aside v-if="open" class="lfp" role="dialog" aria-modal="true" aria-labelledby="lfp-title" @click.stop>
         <header class="lfp-head">
           <h2 id="lfp-title" class="lfp-title">Session format</h2>
           <div class="lfp-head-actions">
-            <button class="lfp-icon" :title="'Minimize'" @click="close">–</button>
             <button class="lfp-icon" :title="'Close'" @click="close">✕</button>
           </div>
         </header>
@@ -161,9 +162,12 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); });
             <SessionTimetable :format="previewFormat" class="lfp-tt" />
           </template>
 
-          <p v-if="swapError" class="lfp-err">{{ swapError }}</p>
+        </div>
 
-          <!-- Commit row. Selecting commits via realtime to everyone. -->
+        <!-- Pinned footer: stays put while the body scrolls, so the commit
+             action is always reachable no matter how long the timetable is. -->
+        <footer class="lfp-foot">
+          <p v-if="swapError" class="lfp-err">{{ swapError }}</p>
           <div class="lfp-actions">
             <button
               v-if="!isCurrent"
@@ -175,7 +179,7 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); });
             </button>
             <span v-else class="lfp-current">✓ Current format</span>
           </div>
-        </div>
+        </footer>
       </aside>
     </Transition>
   </Teleport>
@@ -190,16 +194,19 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); });
   -webkit-backdrop-filter: blur(2px);
 }
 
-/* Drawer: 50vh, slides up from bottom, fills horizontal width. */
+/* Centered full-overlay dialog: wide enough for the format details + the full
+   example timetable, capped at 90vh with the body scrolling inside. */
 .lfp {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 101;
-  height: 50vh; max-height: 640px;
+  position: fixed; top: 50%; left: 50%; z-index: 101;
+  transform: translate(-50%, -50%);
+  width: min(920px, 94vw); max-height: 90vh;
   background: #11141f;
-  border-top: 1px solid #232b44;
-  border-radius: 14px 14px 0 0;
-  box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.55);
+  border: 1px solid #232b44;
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
   display: flex; flex-direction: column;
   color: #e6ecff;
+  overflow: hidden; /* clip the scrolling body to the rounded corners */
 }
 
 .lfp-head {
@@ -218,11 +225,26 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); });
 .lfp-icon:hover { background: #1a2138; border-color: #4f7cff; color: #e6ecff; }
 
 .lfp-body {
-  flex: 1; overflow-y: auto;
-  padding: 0.9rem 1rem 1.2rem;
-  display: grid; gap: 0.7rem;
-  max-width: 760px; margin: 0 auto; width: 100%; box-sizing: border-box;
+  flex: 1; min-height: 0; overflow-y: auto; /* min-height:0 lets the flex child shrink so it scrolls instead of overflowing */
+  padding: 1.1rem 1.4rem 1.4rem;
+  /* Flex column (not grid): a constrained-height grid container resolves its
+     row tracks so a tall last child (the timetable) gets trapped instead of
+     extending the scrollable content. Flex column scrolls the whole stack. */
+  display: flex; flex-direction: column; gap: 0.8rem;
+  width: 100%; box-sizing: border-box;
+  scrollbar-width: thin; scrollbar-color: #2a3350 transparent; /* Firefox */
 }
+/* Children must keep their natural height (default flex-shrink would compress
+   the tall timetable to fit instead of letting the body scroll). */
+.lfp-body > * { flex: none; }
+/* WebKit/Chromium scrollbar — matches the dialog's dark palette. */
+.lfp-body::-webkit-scrollbar { width: 10px; }
+.lfp-body::-webkit-scrollbar-track { background: transparent; }
+.lfp-body::-webkit-scrollbar-thumb {
+  background: #2a3350; border-radius: 999px;
+  border: 2px solid #11141f; /* inset gap so the thumb reads as a pill */
+}
+.lfp-body::-webkit-scrollbar-thumb:hover { background: #3a4a78; }
 
 .lfp-warn {
   margin: 0; font-size: 0.82rem; color: #f5c66c;
@@ -247,10 +269,15 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); });
 
 .lfp-err { margin: 0; font-size: 0.78rem; color: #e06c75; }
 
-.lfp-actions {
-  display: flex; justify-content: center; padding-top: 0.4rem;
-  border-top: 1px solid #1a2138; margin-top: 0.4rem;
+/* Pinned footer (outside the scroll area). */
+.lfp-foot {
+  flex: none;
+  padding: 0.7rem 1.4rem 0.95rem;
+  border-top: 1px solid #232b44;
+  background: #11141f;
+  display: grid; gap: 0.4rem;
 }
+.lfp-actions { display: flex; justify-content: center; }
 .lfp-commit {
   background: linear-gradient(180deg, #4f7cff, #3a5fdc); border: none; color: #fff;
   border-radius: 10px; padding: 0.7rem 1.4rem; cursor: pointer; font: inherit;
@@ -265,6 +292,6 @@ onUnmounted(() => { window.removeEventListener('keydown', onKeydown); });
 /* Transitions */
 .fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
-.slide-up-enter-active, .slide-up-leave-active { transition: transform 0.3s ease-out; }
-.slide-up-enter-from, .slide-up-leave-to { transform: translateY(100%); }
+.pop-enter-active, .pop-leave-active { transition: opacity 0.18s ease, transform 0.18s ease; }
+.pop-enter-from, .pop-leave-to { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
 </style>

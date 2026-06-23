@@ -1,17 +1,32 @@
 <script setup lang="ts">
+import { computed, onMounted, onUnmounted } from 'vue';
 import { useSessionStore } from '@/stores/session';
 
 const props = defineProps<{ meetSpaceUri: string | null }>();
 
 const session = useSessionStore();
 
+/** How many people are currently in the coordination call (presence-based). */
+const callCount = computed(() => session.callParticipantIds.length);
+
 function onClick(): void {
   if (props.meetSpaceUri) {
+    // Flag ourselves as in the call, then open Meet in its own tab.
+    void session.setInCall(true);
     window.open(props.meetSpaceUri, 'syntegrity-meet');
   } else {
     void session.createSessionSpace();
   }
 }
+
+// When the user comes back to the app tab, treat that as having left the call.
+// Heuristic (we can't observe the Meet tab directly), but it keeps the count
+// honest for the common "join → talk → return here" flow.
+function onVisibility(): void {
+  if (document.visibilityState === 'visible') void session.setInCall(false);
+}
+onMounted(() => document.addEventListener('visibilitychange', onVisibility));
+onUnmounted(() => document.removeEventListener('visibilitychange', onVisibility));
 </script>
 
 <template>
@@ -26,6 +41,11 @@ function onClick(): void {
       <rect x="2" y="7" width="13" height="10" rx="2"/>
     </svg>
     <span v-if="meetSpaceUri" class="label">Join Live Call</span>
+    <span
+      v-if="meetSpaceUri && callCount > 0"
+      class="count"
+      :title="`${callCount} ${callCount === 1 ? 'person' : 'people'} in the call`"
+    >{{ callCount }}</span>
   </button>
 </template>
 
@@ -73,5 +93,20 @@ function onClick(): void {
 
 .label {
   white-space: nowrap;
+}
+
+/* Live headcount badge — how many people are currently in the call. */
+.count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: #4f7cff;
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1;
 }
 </style>

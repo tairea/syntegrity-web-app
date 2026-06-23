@@ -35,6 +35,10 @@ export const useSessionStore = defineStore('session', () => {
   const myParticipantId = ref<string | null>(null);
   const channel = ref<Channel | null>(null);
   const countdown = ref<{ to: SessionPhase; n: number } | null>(null);
+  /** Participant ids currently flagged as in the session coordination call. */
+  const callParticipantIds = ref<string[]>([]);
+  /** Whether THIS client is in the call right now (drives its presence meta). */
+  const inCallSelf = ref(false);
   let transitioning = false;
   let ticking = false;
   let sessionSpaceCreating = false;
@@ -127,7 +131,14 @@ export const useSessionStore = defineStore('session', () => {
     // Main channel carries presence + broadcast only.
     const ch = supabase.channel(sessionChannelName(sid), { config: { presence: { key: myParticipantId.value ?? 'anon' } } });
     ch.on('presence', { event: 'sync' }, () => {
-      participants.setOnline(Object.keys(ch.presenceState()));
+      const state = ch.presenceState() as unknown as Record<string, Array<{ inCall?: boolean }>>;
+      participants.setOnline(Object.keys(state));
+      // Best-effort "in the call" count: app-level presence meta (set when a
+      // client clicks Join Live Call, cleared when they return to the app tab),
+      // NOT a true Google Meet roster (that would require the Meet API).
+      callParticipantIds.value = Object.entries(state)
+        .filter(([, metas]) => metas.some((m) => m?.inCall))
+        .map(([key]) => key);
     });
     ch.on('broadcast', { event: 'countdown' }, ({ payload }) => {
       countdown.value = payload as { to: SessionPhase; n: number };
@@ -154,7 +165,7 @@ export const useSessionStore = defineStore('session', () => {
 
     // Subscribe for live updates + presence (fire-and-forget; hydration is done).
     ch.subscribe((status) => {
-      if (status === 'SUBSCRIBED') void ch.track({ participantId: myParticipantId.value, at: Date.now() });
+      if (status === 'SUBSCRIBED') void ch.track({ participantId: myParticipantId.value, at: Date.now(), inCall: inCallSelf.value });
     });
 
     channel.value = ch;
@@ -220,6 +231,16 @@ export const useSessionStore = defineStore('session', () => {
     } finally {
       sessionSpaceCreating = false;
     }
+  }
+
+  /**
+   * Flag/unflag this client as in the session coordination call. Re-tracks
+   * presence so every other client's `callParticipantIds` (and the count on the
+   * Join Live Call button) updates via the presence sync event.
+   */
+  async function setInCall(value: boolean): Promise<void> {
+    inCallSelf.value = value;
+    await channel.value?.track({ participantId: myParticipantId.value, at: Date.now(), inCall: value });
   }
 
   // ── driver tick ─────────────────────────────────────────────────────────
@@ -474,8 +495,8 @@ export const useSessionStore = defineStore('session', () => {
 
   return {
     session, myParticipantId, channel, countdown, sessionId, phase, drivingQuestion, isCreator,
-    driverId, isDriver,
+    driverId, isDriver, callParticipantIds,
     ensureIdentity, createSession, resolveCode, connect, disconnect,
-    setPhase, startCountdown, enterJostle, updateSessionFormat, createSessionSpace,
+    setPhase, startCountdown, enterJostle, updateSessionFormat, createSessionSpace, setInCall,
   };
 });

@@ -8,9 +8,10 @@ agent: claude-code
 workspace: worktree
 
 agentConfig:
-  # Sonnet handles volume cleanly (hardening tickets, tests, docs).
-  # Bump to claude-opus-4-7 for architecture-shaped tickets.
-  model: claude-sonnet-4-6
+  # Opus 4.8 for all spawned sessions (architecture + volume alike).
+  # Drop to claude-sonnet-4-6 if you want cheaper runs for high-volume
+  # mechanical tickets (tests, docs, hardening).
+  model: claude-opus-4-8
   # `permissionless` = agent acts without per-tool prompts. Required for
   # overnight runs. Reverse with `default` if a session goes off-rails.
   permissions: permissionless
